@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { LyricCredit } from "./LyricCredit";
+import type { Record as LyricsRecord } from "../../../mygo";
 import { AudioLines } from "lucide-react";
 import type { LyricLine, LyricsType, Track } from "../../../types/lyricRenderer";
 import type { PlaybackClock } from "./playbackClock";
@@ -124,6 +127,7 @@ function buildLines(lines: LyricLine[], wordSynced: boolean, duration: number): 
 }
 
 export default function NativeLyricsRenderer({
+  credit,
   clock,
   lines,
   onSelect,
@@ -132,6 +136,7 @@ export default function NativeLyricsRenderer({
   type,
   focus = false,
 }: {
+  credit: LyricsRecord | null;
   clock: PlaybackClock;
   lines: LyricLine[];
   onSelect: (positionMs: number) => void;
@@ -147,6 +152,7 @@ export default function NativeLyricsRenderer({
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
   const [following, setFollowing] = useState(true);
+  const [footer, setFooter] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     selectRef.current = onSelect;
@@ -272,8 +278,9 @@ export default function NativeLyricsRenderer({
 
         const style = document.createElement("style");
         style.textContent =
-          ".lyrics-footer{visibility:hidden;pointer-events:none}:host .lyrics-container{height:100%;max-height:100%;background:transparent;--lyplus-font-size-base:var(--lyrics-font-size,40px);--lyplus-padding-line:0px;--am-lyrics-inline-padding:40px;--am-lyrics-line-spacing:38px;--am-lyrics-line-height:1.2}";
+          ".lyrics-footer>.footer-content{display:none}.lyrics-footer{visibility:visible;pointer-events:auto;filter:none!important;opacity:1!important}.lyrics-credit{font:500 13px/1.6 sans-serif;color:#ffffffa6}.lyrics-credit a{color:inherit;text-decoration:underline;text-underline-offset:3px}:host .lyrics-container{height:100%;max-height:100%;background:transparent;--lyplus-font-size-base:var(--lyrics-font-size,40px);--lyplus-padding-line:0px;--am-lyrics-inline-padding:40px;--am-lyrics-line-spacing:38px;--am-lyrics-line-height:1.2}";
         renderer.shadowRoot?.append(style);
+        setFooter(renderer.shadowRoot?.querySelector<HTMLElement>(".lyrics-footer") || null);
 
         if (clock.isReady()) renderer.currentTime = clock.read();
         renderer.resumeFollowing();
@@ -285,6 +292,7 @@ export default function NativeLyricsRenderer({
 
     return () => {
       disposed = true;
+      setFooter(null);
       cancelAnimationFrame(frame);
       unsubscribe();
       document.removeEventListener("visibilitychange", onVisibility);
@@ -298,6 +306,7 @@ export default function NativeLyricsRenderer({
 
   return (
     <section className="native-lyrics">
+      {footer && credit && createPortal(<LyricCredit credit={credit} />, footer)}
       <div className="native-lyrics-host" ref={hostRef} />
       {failed && (
         <div className="native-lyrics-error">

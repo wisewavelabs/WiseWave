@@ -119,6 +119,9 @@ export interface Record {
   refining?: boolean;
   id?: number;
   source: string;
+  source_url?: string;
+  contributor?: string;
+  contributor_url?: string;
   type: string;
   track_name: string;
   artist_name: string;
@@ -198,6 +201,9 @@ export const Music = {
   },
   related(id: string): Promise<Track[]> {
     return call("Music.Related", id);
+  },
+  resolveLink(raw: string): Promise<Track | null> {
+    return call("Music.ResolveLink", raw);
   },
   search(query: string): Promise<Track[]> {
     return call("Music.Search", query);

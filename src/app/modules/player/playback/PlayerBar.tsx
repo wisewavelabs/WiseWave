@@ -8,6 +8,7 @@ import { Artwork, hasArtworkURL } from "../../../shared/ui/Artwork";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import type { Track } from "../../../mygo";
 import { ArtistLinks } from "../shared/ArtistLinks";
+import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 import type { useMusic } from "./useMusic";
 
@@ -236,7 +237,7 @@ export function PlayerBar({
                           </span>
                           <MarqueeText className="mix-popover-track-artist">{item.artist}</MarqueeText>
                         </span>
-                        {item.duration ? <span className="mix-popover-duration">{item.duration}</span> : null}
+                        {(() => { const duration = trackDurationLabel(item, ""); return duration ? <span className="mix-popover-duration">{duration}</span> : null; })()}
                       </div>
                     ))
                   ) : (
@@ -424,7 +425,7 @@ export function PlayerBar({
                         <span className="song-menu-title" onContextMenu={(event) => openSongMenu(event, item, { kind: "queue", index })}><MarqueeText className="queue-popover-track-title">{item.title}</MarqueeText></span>
                         <MarqueeText className="queue-popover-track-artist">{item.artist}</MarqueeText>
                       </span>
-                      <span className="queue-popover-duration">{item.duration}</span>
+                      <span className="queue-popover-duration">{trackDurationLabel(item)}</span>
                     </div>
                   ))
                 ) : (

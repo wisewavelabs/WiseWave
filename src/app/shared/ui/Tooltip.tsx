@@ -40,10 +40,12 @@ export function Tooltip({
     timer.current = setTimeout(() => {
       const rect = ref.current?.getBoundingClientRect();
       if (rect) {
+        const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+        const top = rect.top / zoom;
         setPosition({
-          x: rect.left + rect.width / 2,
-          y: rect.top < 48 ? rect.bottom + 9 : rect.top - 9,
-          below: rect.top < 48,
+          x: (rect.left + rect.width / 2) / zoom,
+          y: top < 48 ? rect.bottom / zoom + 9 : top - 9,
+          below: top < 48,
         });
       }
     }, 450);
@@ -63,7 +65,8 @@ export function Tooltip({
     if (!position || !tooltipRef.current) return;
     const tooltip = tooltipRef.current;
     const width = tooltip.offsetWidth;
-    const center = Math.max(width / 2 + 8, Math.min(window.innerWidth - width / 2 - 8, position.x));
+    const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const center = Math.max(width / 2 + 8, Math.min(window.innerWidth / zoom - width / 2 - 8, position.x));
     tooltip.style.left = `${center}px`;
     tooltip.style.setProperty("--tooltip-arrow-x", `${Math.max(12, Math.min(width - 12, position.x - center + width / 2))}px`);
   }, [position]);

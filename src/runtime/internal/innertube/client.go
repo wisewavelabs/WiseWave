@@ -243,13 +243,7 @@ func extractTrackFromRenderer(renderer map[string]interface{}) *models.Track {
 		}
 	}
 
-	var durationText string
-	var durationSeconds int
-	if fixedCols, ok := renderer["fixedColumns"].([]interface{}); ok && len(fixedCols) > 0 {
-		fcol := object(object(fixedCols[0])["musicResponsiveListItemFixedColumnRenderer"])
-		durationText = extractTextFromColumn(fcol)
-		durationSeconds = parseDurationSeconds(durationText)
-	}
+	durationText, durationSeconds := extractDurationFromRenderer(renderer)
 
 	var artworkURL string
 	if thumbnail, ok := renderer["thumbnail"].(map[string]interface{}); ok {
@@ -295,13 +289,135 @@ func extractTextFromColumn(col map[string]interface{}) string {
 	if !ok {
 		return ""
 	}
+	if text, ok := textObj["simpleText"].(string); ok {
+		return strings.TrimSpace(text)
+	}
 	runs, ok := textObj["runs"].([]interface{})
 	if !ok || len(runs) == 0 {
 		return ""
 	}
-	first, _ := runs[0].(map[string]interface{})
-	t, _ := first["text"].(string)
-	return t
+	var text strings.Builder
+	for _, run := range runs {
+		if value, ok := object(run)["text"].(string); ok {
+			text.WriteString(value)
+		}
+	}
+	return strings.TrimSpace(text.String())
+}
+
+func extractDurationFromRenderer(renderer map[string]interface{}) (string, int) {
+	if text := strings.TrimSpace(extractTextValue(renderer["lengthText"])); isDurationTextValue(text) {
+		return text, parseDurationSeconds(text)
+	}
+	if fixedCols, ok := renderer["fixedColumns"].([]interface{}); ok {
+		for _, column := range fixedCols {
+			fcol := object(object(column)["musicResponsiveListItemFixedColumnRenderer"])
+			text := strings.TrimSpace(extractTextFromColumn(fcol))
+			if isDurationTextValue(text) {
+				return text, parseDurationSeconds(text)
+			}
+		}
+	}
+	if flexCols, ok := renderer["flexColumns"].([]interface{}); ok {
+		for index := len(flexCols) - 1; index >= 0; index-- {
+			entry := object(object(flexCols[index])["musicResponsiveListItemFlexColumnRenderer"])
+			if text := durationFromTextObject(entry["text"]); text != "" {
+				return text, parseDurationSeconds(text)
+			}
+		}
+	}
+	if text := trailingDurationText(extractTextValue(renderer["subtitle"])); text != "" {
+		return text, parseDurationSeconds(text)
+	}
+	if text := trailingDurationText(extractTextValue(renderer["longBylineText"])); text != "" {
+		return text, parseDurationSeconds(text)
+	}
+	if text := trailingDurationText(extractTextValue(renderer["shortBylineText"])); text != "" {
+		return text, parseDurationSeconds(text)
+	}
+	return "", 0
+}
+
+func durationFromTextObject(value interface{}) string {
+	textObj := object(value)
+	if textObj == nil {
+		return ""
+	}
+	if text, ok := textObj["simpleText"].(string); ok {
+		text = strings.TrimSpace(text)
+		if isDurationTextValue(text) {
+			return text
+		}
+	}
+	runs, ok := textObj["runs"].([]interface{})
+	if !ok {
+		return ""
+	}
+	for index := len(runs) - 1; index >= 0; index-- {
+		run := object(runs[index])
+		if run == nil || run["navigationEndpoint"] != nil {
+			continue
+		}
+		text, _ := run["text"].(string)
+		text = strings.TrimSpace(text)
+		if isDurationTextValue(text) {
+			return text
+		}
+	}
+	return ""
+}
+
+func trailingDurationText(subtitle string) string {
+	parts := strings.Split(subtitle, "•")
+	for index := len(parts) - 1; index >= 0; index-- {
+		text := strings.TrimSpace(parts[index])
+		if isDurationTextValue(text) {
+			return text
+		}
+	}
+	return ""
+}
+
+func extractTextValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	textObj := object(value)
+	if textObj == nil {
+		return ""
+	}
+	if text, ok := textObj["simpleText"].(string); ok {
+		return strings.TrimSpace(text)
+	}
+	runs, ok := textObj["runs"].([]interface{})
+	if !ok || len(runs) == 0 {
+		return ""
+	}
+	var text strings.Builder
+	for _, run := range runs {
+		if value, ok := object(run)["text"].(string); ok {
+			text.WriteString(value)
+		}
+	}
+	return strings.TrimSpace(text.String())
+}
+
+func isDurationTextValue(text string) bool {
+	parts := strings.Split(text, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || len(part) > 2 {
+			return false
+		}
+		for _, digit := range part {
+			if digit < '0' || digit > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func parseDurationSeconds(text string) int {

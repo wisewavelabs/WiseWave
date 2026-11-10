@@ -77,7 +77,7 @@ func (a *AmllProvider) Fetch(meta TrackMeta) (*LyricsDocument, error) {
 		}
 	}
 
-	return &LyricsDocument{
+	doc := &LyricsDocument{
 		Source:       "amll",
 		Type:         docType,
 		TrackName:    trackName,
@@ -85,5 +85,9 @@ func (a *AmllProvider) Fetch(meta TrackMeta) (*LyricsDocument, error) {
 		SyncedLyrics: BuildSyncedLrc(lines),
 		PlainLyrics:  BuildPlainLyrics(lines),
 		Lines:        lines,
-	}, nil
+	}
+	if len(ttmlMeta.Authors) > 0 {
+		doc.Contributor = strings.Join(ttmlMeta.Authors, ", ")
+	}
+	return doc, nil
 }

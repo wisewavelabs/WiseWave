@@ -18,6 +18,14 @@ export const DEFAULT_LYRICS_THEME: LyricsTheme = {
   gradient: "linear-gradient(to bottom, #58001b 0%, #2c222a 60%, #0c0c0c 100%)",
 };
 
+export const DEFAULT_PLAYLIST_THEME: LyricsTheme = {
+  background: "#343343",
+  activeText: "#ffffff",
+  inactiveText: "#a4a4a4",
+  flipbookFill: "#d8d8dc",
+  gradient: "linear-gradient(to bottom, #343343 0%, #202028 60%, #0c0c0c 100%)",
+};
+
 const themeCache = new Map<string, LyricsTheme>();
 const MAX_CACHE_SIZE = 250;
 
@@ -84,8 +92,10 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
 
   try {
     const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.referrerPolicy = "no-referrer";
+    if (/^https?:/i.test(imageUrl)) {
+      img.crossOrigin = "anonymous";
+      img.referrerPolicy = "no-referrer";
+    }
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -251,19 +261,18 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
   }
 }
 
-export function useArtworkTheme(track: Track | null | undefined): LyricsTheme {
-  const rawUrl = track?.album_art_url || "";
-  const artworkUrl = artworkURL(rawUrl, 256) || rawUrl;
+export function useImageTheme(imageUrl: string | null | undefined, fallback: LyricsTheme = DEFAULT_LYRICS_THEME): LyricsTheme {
+  const artworkUrl = imageUrl || "";
   const [theme, setTheme] = useState<LyricsTheme>(() => {
     if (artworkUrl && themeCache.has(artworkUrl)) {
       return themeCache.get(artworkUrl)!;
     }
-    return DEFAULT_LYRICS_THEME;
+    return fallback;
   });
 
   useEffect(() => {
     if (!artworkUrl) {
-      setTheme(DEFAULT_LYRICS_THEME);
+      setTheme(fallback);
       return;
     }
 
@@ -275,14 +284,19 @@ export function useArtworkTheme(track: Track | null | undefined): LyricsTheme {
     let cancelled = false;
     extractArtworkTheme(artworkUrl).then((extracted) => {
       if (!cancelled) {
-        setTheme(extracted);
+        setTheme(extracted === DEFAULT_LYRICS_THEME ? fallback : extracted);
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [artworkUrl]);
+  }, [artworkUrl, fallback]);
 
   return theme;
+}
+
+export function useArtworkTheme(track: Track | null | undefined): LyricsTheme {
+  const rawUrl = track?.album_art_url || "";
+  return useImageTheme(artworkURL(rawUrl, 256) || rawUrl || null, DEFAULT_LYRICS_THEME);
 }

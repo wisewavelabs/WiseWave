@@ -61,7 +61,7 @@ func (l *LrcRedProvider) Fetch(meta TrackMeta) (*LyricsDocument, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "WiseWave/1.0 (Android; LrcRed)")
+	req.Header.Set("User-Agent", "WiseWave/1.0 (https://wisewave.me)")
 
 	resp, err := l.httpClient.Do(req)
 	if err != nil {
@@ -111,7 +111,7 @@ func (l *LrcRedProvider) fetchByISRC(isrc string, meta TrackMeta) (*LyricsDocume
 	ttmlURL := fmt.Sprintf("https://lrc.red/s/%s.ttml", cleanISRC)
 	ttmlReq, err := http.NewRequest("GET", ttmlURL, nil)
 	if err == nil {
-		ttmlReq.Header.Set("User-Agent", "WiseWave/1.0 (Android; LrcRed)")
+		ttmlReq.Header.Set("User-Agent", "WiseWave/1.0 (https://wisewave.me)")
 		resp, err := l.httpClient.Do(ttmlReq)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			defer resp.Body.Close()
@@ -121,6 +121,7 @@ func (l *LrcRedProvider) fetchByISRC(isrc string, meta TrackMeta) (*LyricsDocume
 				if parseErr == nil && len(lines) > 0 {
 					return &LyricsDocument{
 						Source:       "lrcred",
+						SourceURL:    "https://lrc.red/s/" + cleanISRC,
 						Type:         "syllable",
 						TrackName:    meta.Title,
 						ArtistName:   meta.Artist,
@@ -139,7 +140,7 @@ func (l *LrcRedProvider) fetchByISRC(isrc string, meta TrackMeta) (*LyricsDocume
 	if err != nil {
 		return nil, err
 	}
-	lrcReq.Header.Set("User-Agent", "WiseWave/1.0 (Android; LrcRed)")
+	lrcReq.Header.Set("User-Agent", "WiseWave/1.0 (https://wisewave.me)")
 
 	resp, err := l.httpClient.Do(lrcReq)
 	if err != nil {
@@ -171,6 +172,7 @@ func (l *LrcRedProvider) fetchByISRC(isrc string, meta TrackMeta) (*LyricsDocume
 
 	return &LyricsDocument{
 		Source:       "lrcred",
+		SourceURL:    "https://lrc.red/s/" + cleanISRC,
 		Type:         docType,
 		TrackName:    meta.Title,
 		ArtistName:   meta.Artist,

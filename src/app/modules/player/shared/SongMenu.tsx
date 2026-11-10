@@ -125,9 +125,10 @@ export function SongMenuProvider({ children, liked, playlists, onLike, onAdd, on
       <div ref={root} className="song-menu" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()}>
         <div className="song-menu-list" role="menu" aria-label={`Options for ${track.title}`}>
           <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={submenu} onPointerEnter={() => setSubmenu(true)} onClick={() => setSubmenu(true)}><CirclePlus /><span>Add to playlist</span><ChevronRight /></button>
-          <button type="button" role="menuitem" onPointerEnter={() => setSubmenu(false)} onClick={() => perform(() => onLike(track))}><Heart fill={saved ? "currentColor" : "none"} /><span>{saved ? "Remove from Liked Songs" : "Save to Liked Songs"}</span></button>
           {playlistId !== undefined && onRemove && <button type="button" role="menuitem" onPointerEnter={() => setSubmenu(false)} onClick={() => perform(() => onRemove(playlistId, track))}><Trash2 /><span>Remove from playlist</span></button>}
           {queueIndex !== undefined && onRemoveQueue && <button type="button" role="menuitem" onPointerEnter={() => setSubmenu(false)} onClick={() => perform(() => onRemoveQueue(queueIndex, track))}><Trash2 /><span>Remove from queue</span></button>}
+          <div className="song-menu-divider" role="separator" />
+          <button type="button" role="menuitem" onPointerEnter={() => setSubmenu(false)} onClick={() => perform(() => onLike(track))}><Heart fill={saved ? "currentColor" : "none"} /><span>{saved ? "Remove from Liked Songs" : "Save to Liked Songs"}</span></button>
           <button type="button" role="menuitem" onPointerEnter={() => setSubmenu(false)} onClick={() => perform(() => onQueue(track))}><ListPlus /><span>Add to queue</span></button>
           <div className="song-menu-divider" role="separator" />
           <button type="button" role="menuitem" onPointerEnter={() => setSubmenu(false)} onClick={() => perform(() => onRadio(track))}><Radio /><span>Go to song radio</span></button>

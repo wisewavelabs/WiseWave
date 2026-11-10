@@ -1,5 +1,8 @@
 "use client";
 
+import { LyricCredit } from "./LyricCredit";
+import type { Record as LyricsRecord } from "../../../mygo";
+
 import { AudioLines, Clock3 } from "lucide-react";
 import {
   type RefObject,
@@ -161,6 +164,7 @@ function AccompanimentLyrics({
 }
 
 const ExistingLyrics = memo(function ExistingLyrics({
+  credit,
   activeIndex: confirmedActiveIndex,
   clock,
   isLoading,
@@ -173,6 +177,7 @@ const ExistingLyrics = memo(function ExistingLyrics({
   type,
   unavailable,
 }: {
+  credit: LyricsRecord | null;
   activeIndex: number;
   isLoading: boolean;
   lines: LyricLine[];
@@ -583,6 +588,7 @@ const ExistingLyrics = memo(function ExistingLyrics({
               </>
             ) : null}
           </div>
+          {!isLoading && !unavailable && credit && <LyricCredit credit={credit} />}
         </div>
       </div>
       <div

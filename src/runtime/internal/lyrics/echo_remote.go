@@ -35,7 +35,7 @@ func NewPaxSenixProvider() *remoteLyricsProvider {
 	return newRemoteLyricsProvider("paxsenix", "https://lyrics.paxsenix.org")
 }
 func NewUnisonProvider() *remoteLyricsProvider {
-	return newRemoteLyricsProvider("unison", "https://unison.boidu.dev")
+	return newRemoteLyricsProvider("unison", "https://unison.betterlyrics.org")
 }
 func NewBetterLyricsProvider() *remoteLyricsProvider {
 	return newRemoteLyricsProvider("betterlyrics", "https://lyrics-api.boidu.dev")
@@ -212,11 +212,15 @@ func (p *remoteLyricsProvider) youlyplus(ctx context.Context, meta TrackMeta) (*
 }
 
 type unisonEntry struct {
-	VideoID  string  `json:"videoId"`
-	Song     string  `json:"song"`
-	Artist   string  `json:"artist"`
-	Lyrics   string  `json:"lyrics"`
-	Duration float64 `json:"duration"`
+	VideoID   string  `json:"videoId"`
+	Song      string  `json:"song"`
+	Artist    string  `json:"artist"`
+	Lyrics    string  `json:"lyrics"`
+	Duration  float64 `json:"duration"`
+	Submitter struct {
+		DisplayName string `json:"displayName"`
+		KeyID       string `json:"keyId"`
+	} `json:"submitter"`
 }
 
 func (p *remoteLyricsProvider) unison(ctx context.Context, meta TrackMeta) (*LyricsDocument, error) {
@@ -248,6 +252,12 @@ func (p *remoteLyricsProvider) unison(ctx context.Context, meta TrackMeta) (*Lyr
 			continue
 		}
 		if doc, err := remoteLyricsDocument(meta, entry.Lyrics); err == nil {
+			if !validRemoteVideoID(entry.VideoID) || strings.TrimSpace(entry.Submitter.DisplayName) == "" || strings.TrimSpace(entry.Submitter.KeyID) == "" {
+				continue
+			}
+			doc.SourceURL = "https://unison.betterlyrics.org/song/" + url.PathEscape(entry.VideoID)
+			doc.Contributor = entry.Submitter.DisplayName
+			doc.ContributorURL = "https://unison.betterlyrics.org/curator/" + url.PathEscape(entry.Submitter.KeyID)
 			return doc, nil
 		}
 	}

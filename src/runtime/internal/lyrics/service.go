@@ -117,7 +117,7 @@ func documentQuality(doc *LyricsDocument) int {
 }
 
 func recordDocument(doc *LyricsDocument) *Record {
-	return &Record{Source: "wisewave", Type: doc.Type, TrackName: doc.TrackName, ArtistName: doc.ArtistName, AlbumName: doc.AlbumName, Duration: doc.Duration, Instrumental: doc.Instrumental, PlainLyrics: doc.PlainLyrics, SyncedLyrics: doc.SyncedLyrics, Lines: doc.Lines}
+	return &Record{Source: doc.Source, SourceURL: doc.SourceURL, Contributor: doc.Contributor, ContributorURL: doc.ContributorURL, Type: doc.Type, TrackName: doc.TrackName, ArtistName: doc.ArtistName, AlbumName: doc.AlbumName, Duration: doc.Duration, Instrumental: doc.Instrumental, PlainLyrics: doc.PlainLyrics, SyncedLyrics: doc.SyncedLyrics, Lines: doc.Lines}
 }
 
 func (s *Service) cacheDocument(key string, flight *lyricsFlight, doc *LyricsDocument, refining bool) {
@@ -154,6 +154,8 @@ func (s *Service) collectLyrics(meta TrackMeta, key string, flight *lyricsFlight
 			doc, err := provider.Fetch(meta)
 			if err != nil {
 				doc = nil
+			} else if doc != nil {
+				doc.Source = provider.Name()
 			}
 			results <- doc
 		}(provider)
@@ -238,5 +240,5 @@ func (s *Service) FetchDocument(meta TrackMeta) (*LyricsDocument, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LyricsDocument{Source: "wisewave", Type: record.Type, TrackName: record.TrackName, ArtistName: record.ArtistName, AlbumName: record.AlbumName, Duration: record.Duration, Instrumental: record.Instrumental, PlainLyrics: record.PlainLyrics, SyncedLyrics: record.SyncedLyrics, Lines: record.Lines}, nil
+	return &LyricsDocument{Source: record.Source, SourceURL: record.SourceURL, Contributor: record.Contributor, ContributorURL: record.ContributorURL, Type: record.Type, TrackName: record.TrackName, ArtistName: record.ArtistName, AlbumName: record.AlbumName, Duration: record.Duration, Instrumental: record.Instrumental, PlainLyrics: record.PlainLyrics, SyncedLyrics: record.SyncedLyrics, Lines: record.Lines}, nil
 }

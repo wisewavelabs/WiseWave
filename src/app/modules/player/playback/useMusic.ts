@@ -93,6 +93,7 @@ export function useMusic() {
   const relatedRef = useRef<{ id: string; tracks: Promise<Track[]> } | null>(null);
   const [error, setError] = useState("");
   const [lyrics, setLyrics] = useState<Line[]>([]);
+  const [lyricsCredit, setLyricsCredit] = useState<import("../../../mygo").Record | null>(null);
   const [plainLyrics, setPlainLyrics] = useState("");
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const historyAddedRef = useRef<string | null>(null);
@@ -260,11 +261,11 @@ export function useMusic() {
     };
   }, [track]);
   useEffect(() => {
-    if (!track) { setLyrics([]); setPlainLyrics(""); return; }
+    if (!track) { setLyrics([]); setPlainLyrics(""); setLyricsCredit(null); return; }
     let active = true;
-    setLyrics([]); setPlainLyrics(""); setLyricsLoading(true);
+    setLyrics([]); setPlainLyrics(""); setLyricsCredit(null); setLyricsLoading(true);
     Music.lyrics(track.title, track.artist, track.album, Math.round(duration || track.duration_seconds || 0), track.id).then((result) => {
-      if (active) { setLyrics(result?.lines || []); setPlainLyrics(result?.plain_lyrics || ""); }
+      if (active) { setLyrics(result?.lines || []); setPlainLyrics(result?.plain_lyrics || ""); setLyricsCredit(result); }
     }).catch(() => { if (active) setPlainLyrics("Lyrics unavailable."); }).finally(() => { if (active) setLyricsLoading(false); });
     return () => { active = false; };
   }, [track, duration]);
@@ -466,10 +467,8 @@ export function useMusic() {
     void Playback.prefetch(playing && !trackLoading ? nextID || "" : "").catch(() => setError("Could not prepare the next track."));
   }, [playing, trackLoading, queue[0]?.id, upNext[0]?.id, autoplay, mixTracks, history]);
 
-  const [settingsVersion, setSettingsVersion] = useState(0);
-
   useEffect(() => {
-    const handleSettingsUpdate = () => { setSettingsVersion((v) => v + 1); setPlaybackSettings(readPlaybackSettings()); };
+    const handleSettingsUpdate = () => setPlaybackSettings(readPlaybackSettings());
     window.addEventListener("wisewave-settings-updated", handleSettingsUpdate);
     window.addEventListener("storage", handleSettingsUpdate);
     return () => {
@@ -485,14 +484,6 @@ export function useMusic() {
   useEffect(() => {
     void Playback.setNormalize(playbackSettings.norm !== false).catch(() => setError("Could not update volume normalization."));
   }, [playbackSettings.norm]);
-
-  useEffect(() => {
-    void Playback.setEqualizer(playbackSettings.eq || "Flat").catch(() => setError("Could not update the equalizer."));
-  }, [playbackSettings.eq]);
-
-  useEffect(() => {
-    void Playback.setStreamingQuality(playbackSettings.quality || "High").catch(() => setError("Could not update streaming quality."));
-  }, [playbackSettings.quality]);
 
   useEffect(() => {
     void Playback.volume(volumeRef.current / 100).catch(() => setError("Could not set startup volume."));
@@ -516,21 +507,7 @@ export function useMusic() {
       return;
     }
 
-    let settings = {
-      dcPreset: "Minimal",
-      dcLine1: "Track title",
-      dcLine2: "Artist",
-      dcLine3: "Album",
-      dcArt: "Track artwork",
-      dcTime: "Elapsed and total",
-      dcPause: true,
-    };
-    try {
-      const stored = localStorage.getItem("wisewave-settings");
-      if (stored) settings = { ...settings, ...JSON.parse(stored) };
-    } catch {}
-
-    if (!playing && settings.dcPause) {
+    if (!playing) {
       sync({
         track_id: "",
         title: "",
@@ -546,73 +523,23 @@ export function useMusic() {
       return;
     }
 
-    const isCustom = settings.dcPreset === "Custom";
     const squareArt = track.album_art_url ? artworkURL(track.album_art_url, 600) : "";
-
-    let finalTitle = track.title;
-    let finalArtist = track.artist;
-    let finalAlbum = isCustom ? (track.album || track.title) : "";
-    let finalArt = squareArt || "wisewave_logo";
-    let finalPos = position;
-    let finalDur = effectiveDuration;
-
-    if (isCustom) {
-      // Line 1 (Title)
-      if (settings.dcLine1 === "Track & Artist") {
-        finalTitle = `${track.title} • ${track.artist}`;
-      } else if (settings.dcLine1 === "None") {
-        finalTitle = "";
-      }
-
-      // Line 2 (Artist)
-      if (settings.dcLine2 === "Artist & Album") {
-        finalArtist = `${track.artist}${track.album ? ` • ${track.album}` : ""}`;
-      } else if (settings.dcLine2 === "Album") {
-        finalArtist = track.album || track.artist;
-      } else if (settings.dcLine2 === "None") {
-        finalArtist = "";
-      }
-
-      // Line 3 (Album)
-      if (settings.dcLine3 === "WiseWave") {
-        finalAlbum = "WiseWave";
-      } else if (settings.dcLine3 === "None") {
-        finalAlbum = "";
-      }
-
-      // Artwork
-      if (settings.dcArt === "WiseWave icon") {
-        finalArt = "wisewave_logo";
-      } else if (settings.dcArt === "None") {
-        finalArt = "";
-      }
-
-      // Time
-      if (settings.dcTime === "Elapsed only") {
-        finalDur = 0;
-      } else if (settings.dcTime === "None") {
-        finalPos = -1;
-        finalDur = 0;
-      }
-
-    }
-
     const artistParts = track.artist.split(/\s*(?:,|\s+&\s+|\s+(?:feat\.?|ft\.?|featuring)\s+)\s*/i).map((n) => n.trim()).filter(Boolean);
     const isSingle = artistParts.length === 1;
 
     sync({
       track_id: track.id,
-      title: finalTitle,
-      artist: finalArtist,
+      title: track.title,
+      artist: track.artist,
       artist_id: isSingle ? (track.artist_id || "") : "",
-      album: finalAlbum,
-      artwork_url: finalArt,
-      position: finalPos,
-      duration: finalDur,
+      album: "",
+      artwork_url: squareArt || "wisewave_logo",
+      position,
+      duration: effectiveDuration,
       seek_version: seekVersionRef.current,
       playing,
     });
-  }, [discordEnabled, privateListening, track?.id, track?.album_art_url, playing, effectiveDuration, seekVersionRef.current, settingsVersion]);
+  }, [discordEnabled, privateListening, track?.id, track?.album_art_url, playing, position, effectiveDuration, seekVersionRef.current]);
 
   useEffect(() => {
     const handleBeforeUnload = () => { void Discord.close().catch(() => {}); };
@@ -629,5 +556,5 @@ export function useMusic() {
     else if (action === "next") actionsRef.current.next();
     else if (action === "mute") actionsRef.current.toggleMute();
   }), []);
-  return { seek, seekVersion, changeVolume, track, trackLoading, buffering, history, clearHistory, exportHistory, popular, forYou, queue, upNext, mixTracks, playing, position, duration, volume, muted, repeat, repeatMode, cycleRepeat, autoplay, error, lyrics, plainLyrics, lyricsLoading, playbackState, discordEnabled, toggleDiscord, privateListening, togglePrivateListening, resetAudioEngine, stopPlayback, play, playQueued, next, shuffle, toggle, toggleMute, setQueue, setError, setPlaying, setPosition, setDuration, setVolume, setRepeat, setAutoplay };
+  return { seek, seekVersion, changeVolume, track, trackLoading, buffering, history, clearHistory, exportHistory, popular, forYou, queue, upNext, mixTracks, playing, position, duration, volume, muted, repeat, repeatMode, cycleRepeat, autoplay, error, lyrics, plainLyrics, lyricsCredit, lyricsLoading, playbackState, discordEnabled, toggleDiscord, privateListening, togglePrivateListening, resetAudioEngine, stopPlayback, play, playQueued, next, shuffle, toggle, toggleMute, setQueue, setError, setPlaying, setPosition, setDuration, setVolume, setRepeat, setAutoplay };
 }

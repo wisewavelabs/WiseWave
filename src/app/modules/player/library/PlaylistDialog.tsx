@@ -1,19 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus, Pencil, X } from "lucide-react";
 
-export function PlaylistDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string, description: string, cover?: string) => void }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+const NAME_LIMIT = 100;
+const DESCRIPTION_LIMIT = 300;
+
+export function PlaylistDialog({ onClose, onCreate, playlist }: { onClose: () => void; onCreate: (name: string, description: string, cover?: string) => void; playlist?: { name: string; description: string; cover?: string } }) {
+  const [name, setName] = useState((playlist?.name || "").slice(0, NAME_LIMIT));
+  const [description, setDescription] = useState((playlist?.description || "").slice(0, DESCRIPTION_LIMIT));
   const [closing, setClosing] = useState(false);
-  const [cover, setCover] = useState<string>();
+  const [cover, setCover] = useState<string | undefined>(playlist?.cover);
   const [imageError, setImageError] = useState("");
   const [imageLoading, setImageLoading] = useState(false);
   const imageVersion = useRef(0);
+  const formRef = useRef<HTMLFormElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const closeTimer = useRef<number | null>(null);
   const previousFocus = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const canSubmit = Boolean(name.trim()) && !imageLoading;
 
   const chooseImage = (file?: File) => {
     if (!file) return;
@@ -57,31 +63,61 @@ export function PlaylistDialog({ onClose, onCreate }: { onClose: () => void; onC
       return;
     }
     setClosing(true);
-    closeTimer.current = window.setTimeout(action, 180);
+    closeTimer.current = window.setTimeout(action, 200);
   };
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); dismiss(() => closeRef.current()); }
+      if (event.key === "Tab") {
+        const items = Array.from(formRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not([type="file"]):not(:disabled), textarea:not(:disabled)') || []);
+        const first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     };
     document.addEventListener("keydown", keydown, true);
     return () => { imageVersion.current++; document.removeEventListener("keydown", keydown, true); if (closeTimer.current !== null) window.clearTimeout(closeTimer.current); previousFocus.current?.focus(); };
   }, []);
 
   return createPortal(<div className={`playlist-dialog-overlay ${closing ? "closing" : ""}`} onMouseDown={(event) => { if (event.target === event.currentTarget) dismiss(onClose); }}>
-    <form className="playlist-dialog" role="dialog" aria-modal="true" aria-labelledby="playlist-dialog-title" onSubmit={(event) => { event.preventDefault(); if (name.trim() && !imageLoading) dismiss(() => onCreate(name.trim(), description.trim(), cover)); }}>
-      <header><h2 id="playlist-dialog-title">Create playlist</h2><button type="button" aria-label="Close" onClick={() => dismiss(onClose)}><X size={20} /></button></header>
-      <div className="playlist-image-field">
-        <label className="playlist-image-picker">
-          {cover ? <img src={cover} alt="" /> : <ImagePlus size={25} aria-hidden="true" />}
-          <input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Choose playlist image" onChange={(event) => { chooseImage(event.target.files?.[0]); event.target.value = ""; }} />
-        </label>
-        <div><strong>Playlist image</strong><small>optional, add a jpg, png or webp image</small>{cover && <button type="button" onClick={() => { imageVersion.current++; setCover(undefined); setImageLoading(false); setImageError(""); }}>Remove</button>}</div>
+    <form ref={formRef} className="playlist-dialog" role="dialog" aria-modal="true" aria-labelledby="playlist-dialog-title" onSubmit={(event) => { event.preventDefault(); if (canSubmit) dismiss(() => onCreate(name.trim(), description.trim(), cover)); }}>
+      <header>
+        <h2 id="playlist-dialog-title">{playlist ? "Edit details" : "Create playlist"}</h2>
+        <button type="button" aria-label="Close" onClick={() => dismiss(onClose)}><X size={20} /></button>
+      </header>
+
+      <div className="playlist-dialog-content">
+        <div className="playlist-image-field">
+          <button type="button" className={`playlist-image-picker ${imageLoading ? "loading" : ""} ${cover ? "has-cover" : ""}`} aria-label="Choose photo" disabled={imageLoading} onClick={() => fileInput.current?.click()}>
+            {cover ? <img src={cover} alt="" /> : <ImagePlus size={36} strokeWidth={1.5} aria-hidden="true" />}
+            <span className="playlist-image-overlay" aria-hidden="true"><Pencil size={28} strokeWidth={1.75} /><span>Choose photo</span></span>
+          </button>
+          <input ref={fileInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" tabIndex={-1} onChange={(event) => { chooseImage(event.target.files?.[0]); event.target.value = ""; }} />
+        </div>
+
+        <div className="playlist-dialog-fields">
+          <label className={`playlist-field ${name ? "filled" : ""}`}>
+            <input autoFocus required maxLength={NAME_LIMIT} placeholder=" " value={name} onChange={(event) => setName(event.target.value.slice(0, NAME_LIMIT))} />
+            <span className="playlist-field-label">Name</span>
+            <fieldset aria-hidden="true"><legend><span>Name</span></legend></fieldset>
+            <span className={`playlist-field-count ${name.length >= NAME_LIMIT ? "limit" : ""}`} aria-live="polite">{name.length}/{NAME_LIMIT}</span>
+          </label>
+          <label className={`playlist-field playlist-field-area ${description ? "filled" : ""}`}>
+            <textarea maxLength={DESCRIPTION_LIMIT} rows={4} placeholder=" " value={description} onChange={(event) => setDescription(event.target.value.slice(0, DESCRIPTION_LIMIT))} />
+            <span className="playlist-field-label">Description</span>
+            <fieldset aria-hidden="true"><legend><span>Description</span></legend></fieldset>
+            <span className={`playlist-field-count ${description.length >= DESCRIPTION_LIMIT ? "limit" : ""}`} aria-live="polite">{description.length}/{DESCRIPTION_LIMIT}</span>
+          </label>
+        </div>
       </div>
+
       {imageError && <p className="playlist-image-error" role="alert">{imageError}</p>}
-      <label>Name <span aria-hidden="true">*</span><input autoFocus required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <label>Description <small>Optional</small><textarea maxLength={500} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-      <footer><button type="button" onClick={() => dismiss(onClose)}>Cancel</button><button type="submit" disabled={!name.trim() || imageLoading}>Create</button></footer>
+
+      <footer>
+        <button type="button" onClick={() => dismiss(onClose)}>Cancel</button>
+        <button type="submit" disabled={!canSubmit}>{playlist ? "Save" : "Create"}</button>
+      </footer>
     </form>
   </div>, document.body);
 }

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Line, Track } from "../../../mygo";
+import type { Line, Track, Record } from "../../../mygo";
 import type { LyricLine } from "../../../types/lyricRenderer";
 import LyricsRenderer from "./LyricsRenderer";
-import { DEFAULT_LYRICS_THEME, useArtworkTheme } from "../shared/artworkColor";
+import { DEFAULT_LYRICS_THEME } from "../shared/artworkColor";
 import { createPlaybackClock, type PlaybackClock } from "./playbackClock";
 import { normalizeLyricLines } from "./lyricLayout";
 
 export function Lyrics({
   lines,
+  credit,
   plain,
   loading,
   position,
@@ -18,6 +19,7 @@ export function Lyrics({
   onSeek,
 }: {
   lines: Line[];
+  credit: Record | null;
   plain: string;
   loading: boolean;
   position: number;
@@ -33,7 +35,6 @@ export function Lyrics({
   });
   const offset = Number.parseInt(settings.lyrOffset || "0", 10) || 0;
   const fontSize = settings.lyrSize === "Small" ? 32 : settings.lyrSize === "Large" ? 48 : 40;
-  const artworkTheme = useArtworkTheme(settings.art === false ? null : track);
   const clockRef = useRef<PlaybackClock>(createPlaybackClock());
   const clock = clockRef.current;
 
@@ -79,7 +80,7 @@ export function Lyrics({
   );
 
   const unavailable = !loading && !lines.length && !plain.trim();
-  const theme = settings.art === false ? DEFAULT_LYRICS_THEME : artworkTheme;
+  const theme = DEFAULT_LYRICS_THEME;
 
   const durationSeconds =
     typeof track?.duration_seconds === "number"
@@ -109,6 +110,7 @@ export function Lyrics({
       }
     >
       <LyricsRenderer
+        credit={credit}
         activeIndex={-1}
         clock={clock}
         isLoading={loading}

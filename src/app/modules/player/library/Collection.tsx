@@ -1,29 +1,16 @@
 import { useState, useMemo } from "react";
 import { Clock3, Heart, ListMusic, Search } from "lucide-react";
 import type { Track } from "../../../mygo";
-import type { LibraryTrack, Playlist } from "./useLibrary";
+import { formatAddedAt, type LibraryTrack, type Playlist } from "./useLibrary";
 import { ArtistLinks } from "../shared/ArtistLinks";
-import { Artwork } from "../../../shared/ui/Artwork";
+import { Artwork, artworkURL } from "../../../shared/ui/Artwork";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { PlayIcon } from "../../../shared/ui/icons";
+import { DEFAULT_PLAYLIST_THEME, useImageTheme } from "../shared/artworkColor";
+import { trackDurationLabel, trackDurationSeconds } from "../shared/trackDuration";
 import { LikedSongsCover } from "./LikedSongsCover";
+import { usePlaylistMenu } from "./PlaylistMenu";
 import { useSongMenu } from "../shared/SongMenu";
-
-function parseTrackDuration(track: Track): number {
-  if (track.duration_seconds && track.duration_seconds > 0) return track.duration_seconds;
-  if (!track.duration) return 0;
-  const parts = track.duration.split(":").map(Number);
-  if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
-  if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
-  return 0;
-}
-
-function formatCollectionDuration(seconds: number): string {
-  const minutes = Math.max(0, Math.floor((Number.isFinite(seconds) ? seconds : 0) / 60));
-  const hours = Math.floor(minutes / 60);
-  if (!hours) return `${minutes} min`;
-  return `${hours}h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
-}
 
 export function Collection({
   kind,
@@ -39,6 +26,7 @@ export function Collection({
   onArtist: (track: Track) => void;
 }) {
   const openSongMenu = useSongMenu();
+  const openPlaylistMenu = usePlaylistMenu();
   const [query, setQuery] = useState("");
 
   const visibleSongs = useMemo(() => {
@@ -49,10 +37,11 @@ export function Collection({
     );
   }, [tracks, query]);
 
-  const totalDuration = useMemo(() => {
-    const totalSeconds = tracks.reduce((sum, song) => sum + parseTrackDuration(song), 0);
-    return formatCollectionDuration(totalSeconds);
+  const totalMinutes = useMemo(() => {
+    const totalSeconds = tracks.reduce((sum, song) => sum + trackDurationSeconds(song), 0);
+    return Math.max(0, Math.floor(totalSeconds / 60));
   }, [tracks]);
+  const statsLabel = `${tracks.length} ${tracks.length === 1 ? "song" : "songs"} of ${totalMinutes} ${totalMinutes === 1 ? "minute" : "minutes"}`;
 
   const name =
     kind === "liked"
@@ -64,9 +53,17 @@ export function Collection({
       ? "Search in Your Library"
       : "Search in playlist";
 
+  const playlistArtwork = useMemo(() => {
+    if (kind !== "playlist") return "";
+    if (playlist?.cover) return playlist.cover;
+    const firstArt = tracks[0]?.album_art_url || "";
+    return artworkURL(firstArt, 256) || firstArt;
+  }, [kind, playlist?.cover, tracks]);
+  const playlistTheme = useImageTheme(playlistArtwork || null, DEFAULT_PLAYLIST_THEME);
+
   return (
     <section className={`player-scroll view-enter collection collection-${kind}`}>
-      <div className="collection-header">
+      <div className="collection-header" style={kind === "playlist" ? { background: playlistTheme.gradient } : undefined} onContextMenu={(event) => { if (playlist) openPlaylistMenu(event, playlist); }}>
         <div className="collection-heading">
           {kind === "liked" ? (
             <LikedSongsCover className="collection-cover" />
@@ -84,7 +81,7 @@ export function Collection({
               <p className="collection-header-desc">{playlist.description}</p>
             )}
             <p className="collection-header-stats">
-              {tracks.length} {tracks.length === 1 ? "song" : "songs"} with {totalDuration} of music
+              {statsLabel}
             </p>
           </div>
         </div>
@@ -115,11 +112,11 @@ export function Collection({
           </label>
         </div>
 
-        <div className="collection-table-header">
+        <div className="collection-table-header collection-library-table-header">
           <span className="col-num-header">#</span>
-          <span className="collection-grid-cols">
+          <span className="collection-grid-cols collection-library-grid-cols">
             <span className="col-title-header">Title</span>
-            <span className="col-author-header">Author</span>
+            <span className="collection-album-header">Album or podcast</span>
             <span className="col-date-header">Date added</span>
             <Clock3 className="col-duration-icon" size={16} />
           </span>
@@ -138,7 +135,7 @@ export function Collection({
             >
               <span className="song-index-num">{index + 1}</span>
 
-              <span className="collection-grid-cols">
+              <span className="collection-grid-cols collection-library-grid-cols">
                 <span className="song-title-cell">
                   <span className="song-artwork-container">
                     <Artwork
@@ -154,35 +151,23 @@ export function Collection({
                   <span className="song-title-wrapper">
                     <span className="song-menu-title" onContextMenu={(event) => openSongMenu(event, song, kind === "liked" ? { kind: "liked" } : playlist ? { kind: "playlist", id: playlist.id } : undefined)}><MarqueeText className="song-main-title">{song.title}</MarqueeText></span>
                     <small className="song-sub-label">
-                      {kind === "liked"
-                        ? "Liked song"
-                        : song.album || ""}
+                      <ArtistLinks track={song} onOpen={onArtist} />
                     </small>
                   </span>
                 </span>
 
-                <span
-                  className="song-author-cell"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                  }}
-                >
-                  <MarqueeText className="song-author-marquee">
-                    <ArtistLinks track={song} onOpen={onArtist} />
+                <span className="collection-album-cell" onClick={(event) => event.stopPropagation()}>
+                  <MarqueeText className="collection-album-marquee">
+                    {song.album || "—"}
                   </MarqueeText>
                 </span>
 
                 <span className="song-date-cell">
-                  {song.addedAt && Number.isFinite(Date.parse(song.addedAt)) ? (
-                    <>
-                      <span>{new Date(song.addedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}</span>
-                      <small>{new Date(song.addedAt).toLocaleTimeString(undefined, { timeStyle: "short" })}</small>
-                    </>
-                  ) : "—"}
+                  {formatAddedAt(song.addedAt) || "—"}
                 </span>
 
                 <span className="song-duration-cell">
-                  <span className="duration-digits">{song.duration}</span>
+                  <span className="duration-digits">{trackDurationLabel(song)}</span>
                 </span>
               </span>
             </div>

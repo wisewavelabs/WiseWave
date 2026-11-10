@@ -63,6 +63,7 @@ type TtmlMetadata struct {
 	Artists   []string
 	ISRC      []string
 	SpotifyID []string
+	Authors   []string
 }
 
 func ParseTtml(xmlContent string) ([]Line, *TtmlMetadata, error) {
@@ -116,6 +117,8 @@ func ParseTtml(xmlContent string) ([]Line, *TtmlMetadata, error) {
 						meta.ISRC = append(meta.ISRC, value)
 					case "spotifyId":
 						meta.SpotifyID = append(meta.SpotifyID, value)
+					case "ttmlAuthorGithubLogin":
+						meta.Authors = append(meta.Authors, value)
 					}
 				}
 			} else if localName == "p" {

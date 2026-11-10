@@ -6,6 +6,7 @@ import { Artwork } from "../../../shared/ui/Artwork";
 import { Classic } from "../../../shared/ui/Classic";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { ArtistLinks } from "../shared/ArtistLinks";
+import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 
 const CATEGORIES = ["All", "Tracks", "Albums", "Playlists", "Artists"] as const;
@@ -272,7 +273,7 @@ export function SearchResults({
                         </span>
                       </div>
                       <span className="search-track-duration">
-                        {track.duration}
+                        {trackDurationLabel(track)}
                       </span>
                     </div>
                     <div className="search-track-actions">

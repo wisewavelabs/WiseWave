@@ -5,6 +5,7 @@ import { Artwork } from "../../../shared/ui/Artwork";
 import { Classic } from "../../../shared/ui/Classic";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { ArtistLinks } from "../shared/ArtistLinks";
+import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 
 export function Album({ id, onBack, onPlay, onArtist }: {
@@ -50,7 +51,7 @@ export function Album({ id, onBack, onPlay, onArtist }: {
         <span className="catalog-song-number">{index + 1}</span>
         <button className="catalog-song-cover" type="button" aria-label={`Play ${track.title}`} onClick={() => onPlay(track, tracks)}><Artwork src={album.artwork_url || track.album_art_url} size={48} lazy /><span><Play size={16} fill="currentColor" /></span></button>
         <div className="catalog-song-info"><button className="song-menu-title" type="button" onContextMenu={(event) => openSongMenu(event, { ...track, album_id: track.album_id || id })} onClick={() => onPlay(track, tracks)}><MarqueeText>{track.title}</MarqueeText></button><MarqueeText><ArtistLinks track={track} onOpen={onArtist} /></MarqueeText></div>
-        <span className="catalog-song-duration">{track.duration}</span>
+        <span className="catalog-song-duration">{trackDurationLabel(track)}</span>
       </div>) : <p className="feed-message">No songs available for this album.</p>}
     </section>
   </div>;

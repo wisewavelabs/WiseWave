@@ -12,15 +12,23 @@ import (
 	"time"
 
 	"wisewave-runtime/internal/cache"
+	"wisewave-runtime/internal/external/gaana"
+	"wisewave-runtime/internal/external/jiosaavn"
+	"wisewave-runtime/internal/external/spotify"
 	"wisewave-runtime/internal/innertube"
 	"wisewave-runtime/internal/lyrics"
 	"wisewave-runtime/internal/models"
 )
 
 var videoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+var spotifyTrackID = regexp.MustCompile(`^[A-Za-z0-9]{22}$`)
+var trackTextNoise = regexp.MustCompile(`[^a-z0-9 ]+`)
 
 type Music struct {
 	client  *innertube.Client
+	saavn   *jiosaavn.Client
+	gaana   *gaana.Client
+	spotify *spotify.Client
 	lyrics  *lyrics.Service
 	streams *cache.StreamCache
 	http    *http.Client
@@ -32,7 +40,132 @@ func NewMusic() *Music {
 
 func NewMusicWithTokens(tokens func(context.Context, string, string) (string, string, error)) *Music {
 	client := innertube.NewClientWithTokens(tokens)
-	return &Music{client: client, lyrics: lyrics.NewService(client.MusicClient), streams: cache.NewStreamCache(), http: &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: 30 * time.Second}}}
+	return &Music{client: client, saavn: jiosaavn.NewClient(), gaana: gaana.NewClient(), spotify: spotify.NewClient(), lyrics: lyrics.NewService(client.MusicClient), streams: cache.NewStreamCache(), http: &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: 30 * time.Second}}}
+}
+
+func (m *Music) ResolveLink(raw string) (*models.Track, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil {
+		return nil, errors.New("unsupported music link")
+	}
+	host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
+	var title, artist string
+	switch host {
+	case "open.spotify.com":
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) == 3 && strings.HasPrefix(parts[0], "intl-") {
+			parts = parts[1:]
+		}
+		if len(parts) < 2 || parts[0] != "track" || !spotifyTrackID.MatchString(parts[1]) {
+			return nil, errors.New("unsupported Spotify link")
+		}
+		track, err := m.spotify.GetTrack(parts[1])
+		if err != nil {
+			return nil, errors.New("Spotify track could not be read")
+		}
+		title, artist = track.Title, track.Artist
+	case "gaana.com":
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) != 2 || parts[0] != "song" {
+			return nil, errors.New("unsupported Gaana link")
+		}
+		title = strings.ReplaceAll(parts[1], "-", " ")
+	case "jiosaavn.com":
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) < 3 || parts[0] != "song" {
+			return nil, errors.New("unsupported JioSaavn link")
+		}
+		title = strings.ReplaceAll(parts[1], "-", " ")
+	default:
+		return nil, errors.New("unsupported music link")
+	}
+	if title == "" {
+		return nil, errors.New("music link has no track title")
+	}
+	query := strings.TrimSpace(title + " " + artist)
+	candidates := make([]models.Track, 0, 12)
+	if tracks, err := m.client.Search(query); err == nil {
+		candidates = append(candidates, tracks...)
+	}
+	if tracks, err := m.saavn.Search(query); err == nil {
+		candidates = append(candidates, tracks...)
+	}
+	if tracks, err := m.gaana.Search(query); err == nil {
+		candidates = append(candidates, tracks...)
+	}
+	if len(candidates) == 0 {
+		return nil, errors.New("no playable match found for this link")
+	}
+	best := -1
+	bestScore := -1
+	needle := normalizeTrackText(title)
+	for i := range candidates {
+		candidate := &candidates[i]
+		if !validTrackID(candidate.ID) {
+			continue
+		}
+		candidateTitle := normalizeTrackText(candidate.Title)
+		if candidateTitle == "" {
+			continue
+		}
+		score := 0
+		if candidateTitle == needle {
+			score += 100
+		}
+		if artist != "" && strings.Contains(normalizeTrackText(candidate.Artist), normalizeTrackText(artist)) {
+			score += 25
+		}
+		if score > bestScore {
+			best, bestScore = i, score
+		}
+	}
+	if best < 0 || bestScore < 100 {
+		return nil, errors.New("no playable match found for this link")
+	}
+	return &candidates[best], nil
+}
+
+func normalizeTrackText(value string) string {
+	value = strings.ToLower(value)
+	return strings.Join(strings.Fields(trackTextNoise.ReplaceAllString(value, " ")), " ")
+}
+
+func (m *Music) resolveAudio(ctx context.Context, id string, maxBitrate int) (*innertube.ResolvedAudioStream, error) {
+	switch {
+	case strings.HasPrefix(id, "saavn:") || strings.HasPrefix(id, "jiosaavn:"):
+		if !validSourceID(id, "saavn:") && !validSourceID(id, "jiosaavn:") {
+			return nil, errors.New("invalid JioSaavn track ID")
+		}
+		return m.saavn.ResolveAudioStream(id)
+	case strings.HasPrefix(id, "gaana:"):
+		if !validSourceID(id, "gaana:") {
+			return nil, errors.New("invalid Gaana track ID")
+		}
+		return m.gaana.ResolveAudioStream(id)
+	case videoID.MatchString(id):
+		for _, options := range []innertube.StreamOptions{
+			{PreferredCodec: innertube.CodecOpus, RequireCodec: true, Validate: true, MaxBitrate: maxBitrate},
+			{PreferredCodec: innertube.CodecAAC, RequireCodec: true, Validate: true, MaxBitrate: maxBitrate},
+			{PreferredCodec: innertube.CodecAny, Validate: true, MaxBitrate: maxBitrate},
+		} {
+			stream, err := m.client.ResolveAudio(ctx, id, options)
+			if err == nil {
+				return stream, nil
+			}
+		}
+		return nil, errors.New("no supported audio format found")
+	default:
+		return nil, errors.New("unsupported track source")
+	}
+}
+
+func validSourceID(id, prefix string) bool {
+	value := strings.TrimPrefix(id, prefix)
+	return value != id && value != "" && len(value) <= 128 && !strings.ContainsAny(value, "/\\?#")
+}
+
+func validTrackID(id string) bool {
+	return videoID.MatchString(id) || validSourceID(id, "saavn:") || validSourceID(id, "jiosaavn:") || validSourceID(id, "gaana:")
 }
 
 func (m *Music) Search(query string) ([]models.Track, error) {
@@ -208,13 +341,13 @@ type Audio struct{ Music *Music }
 func (handler Audio) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m := handler.Music
 	id := strings.TrimPrefix(r.URL.Path, "/")
-	if (r.Method != http.MethodGet && r.Method != http.MethodHead) || !videoID.MatchString(id) {
+	if (r.Method != http.MethodGet && r.Method != http.MethodHead) || !validTrackID(id) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 	stream, ok := m.streams.Get(id)
 	if !ok {
-		resolved, err := m.client.ResolveAudioStream(id)
+		resolved, err := m.resolveAudio(r.Context(), id, 0)
 		if err != nil {
 			http.Error(w, "Audio unavailable", http.StatusBadGateway)
 			return
@@ -243,7 +376,7 @@ func (handler Audio) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = resp.Body.Close()
 		}
 		m.streams.Invalidate(id)
-		resolved, err := m.client.ResolveAudioStream(id)
+		resolved, err := m.resolveAudio(ctx, id, 0)
 		if err != nil {
 			http.Error(w, "Audio unavailable", http.StatusBadGateway)
 			return

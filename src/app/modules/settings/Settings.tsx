@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { TrayControl, type Track } from "../../mygo";
 import { Artwork } from "../../shared/ui/Artwork";
 import { PlayerAlert } from "../player/shared/PlayerAlert";
-import { AudioLines, BookOpen, Check, ChevronRight, CircleHelp, ExternalLink, Code2, Globe, Mic2, Palette, Shield, X } from "lucide-react";
+import { AudioLines, BookOpen, Check, ChevronLeft, ChevronRight, CircleHelp, ExternalLink, Code2, Globe, Mic2, Palette, Shield, X } from "lucide-react";
 import appIcon from "../../../../resources/icon.png";
 import lyricsLicense from "../../../../resources/accompanist-lyrics-license.txt?raw";
 import lyricsNotice from "../../../../resources/accompanist-lyrics-notice.txt?raw";
@@ -12,7 +12,12 @@ import reactDomLicense from "../../../../node_modules/react-dom/LICENSE?raw";
 import lucideLicense from "../../../../node_modules/lucide-react/LICENSE?raw";
 import lottieLicense from "../../../../node_modules/lottie-web/LICENSE.md?raw";
 import mygoLicense from "../../../../node_modules/mygo-runtime/LICENSE?raw";
+import goAACLicense from "../../../../resources/go-aac-license.txt?raw";
+import goAudioStreamLicense from "../../../../resources/go-audio-stream-license.txt?raw";
+import goM4ALicense from "../../../../resources/go-m4a-license.txt?raw";
+import simdLicense from "../../../../resources/simd-license.txt?raw";
 import { appVersion } from "../../version";
+import { LYRIC_SOURCES } from "../player/lyric-view/LyricCredit";
 
 function formatTime(value: number) {
   const seconds = Math.max(0, Math.floor(value));
@@ -43,9 +48,7 @@ const DEFAULT_SETTINGS = {
   tray: true,
   mini: false,
   startup: false,
-  quality: "High",
   norm: true,
-  eq: "Flat",
   vol: 70,
   auto: true,
   resume: true,
@@ -56,13 +59,6 @@ const DEFAULT_SETTINGS = {
   lyrSize: "Medium",
   lyrOffset: "0 ms",
   dc: true,
-  dcPreset: "Minimal",
-  dcLine1: "Track title",
-  dcLine2: "Artist",
-  dcLine3: "Album",
-  dcArt: "Track artwork",
-  dcTime: "Elapsed and total",
-  dcPause: true,
   jr: true,
   jrprompt: "After each session",
   jrmood: true,
@@ -118,7 +114,7 @@ const SETTINGS_SECTIONS: Record<string, SettingSectionDef> = {
         h: "Display",
         r: [
           { k: "ui", l: "Interface size", o: ["Compact", "Default", "Large"], d: "Scales text and spacing across the app.", t: "dd" },
-          { k: "art", l: "Album art backdrop", d: "Tint the player with the current cover.", t: "tog" },
+          { k: "art", l: "Lyrics artwork color", d: "Tint the lyrics page with the current cover.", t: "tog" },
           { k: "motion", l: "Reduce motion", d: "Turn off animations and transitions.", t: "tog" },
         ],
       },
@@ -138,9 +134,7 @@ const SETTINGS_SECTIONS: Record<string, SettingSectionDef> = {
       {
         h: "Sound",
         r: [
-          { k: "quality", l: "Streaming quality", o: ["Normal", "High"], d: "Higher quality uses more data.", t: "dd" },
           { k: "norm", l: "Normalize volume", d: "Keeps loudness even between tracks.", t: "tog" },
-          { k: "eq", l: "Equalizer", o: ["Flat", "Bass boost", "Vocal", "Treble boost", "Acoustic"], t: "dd" },
           { k: "vol", l: "Startup volume", min: 0, max: 100, u: "%", z: "Muted", t: "rng" },
         ],
       },
@@ -216,18 +210,6 @@ const SETTINGS_SECTIONS: Record<string, SettingSectionDef> = {
         h: "Presence",
         r: [
           { k: "dc", l: "Show on Discord", d: "Display your current music activity in your Discord status.", t: "tog" },
-          { k: "dcPreset", l: "Preset", o: ["Minimal", "Custom"], d: "Minimal uses the clean standard Discord layout. Custom lets you choose every detail.", dep: "dc", t: "seg" },
-        ],
-      },
-      {
-        h: "Custom options",
-        r: [
-          { k: "dcLine1", l: "First line", o: ["Track title", "Track & Artist", "None"], d: "Primary bold text line.", dep: "dc", t: "dd" },
-          { k: "dcLine2", l: "Second line", o: ["Artist", "Artist & Album", "Album", "None"], d: "Secondary artist/detail text line.", dep: "dc", t: "dd" },
-          { k: "dcLine3", l: "Third line", o: ["Album", "WiseWave", "None"], d: "Album subtitle and image tooltip.", dep: "dc", t: "dd" },
-          { k: "dcArt", l: "Cover art", o: ["Track artwork", "WiseWave icon", "None"], d: "Artwork shown alongside details.", dep: "dc", t: "dd" },
-          { k: "dcTime", l: "Time display", o: ["Elapsed and total", "Elapsed only", "None"], d: "How song duration and progress bar appear.", dep: "dc", t: "dd" },
-          { k: "dcPause", l: "Hide when paused", d: "Remove your status as soon as playback pauses.", dep: "dc", t: "tog" },
         ],
       },
     ],
@@ -261,20 +243,10 @@ const LICENSES = [
   { name: "MyGo Runtime", license: "MIT", text: mygoLicense },
   { name: "Accompanist Lyrics UI", license: "Apache 2.0", text: `${lyricsNotice}\n\n${lyricsLicense}` },
   { name: "Loading UI", license: "MIT", text: loadingLicense },
-];
-
-const LYRICS_CREDITS = [
-  { name: "lrc.red", url: "https://lrc.red" },
-  { name: "LRCLIB", url: "https://lrclib.net" },
-  { name: "AMLL TTML Database", url: "https://github.com/amll-dev/amll-ttml-db" },
-  { name: "Bini Lyrics", url: "https://lyrics-api.binimum.org" },
-  { name: "YouLy+", url: "https://lyricsplus.binimum.org" },
-  { name: "Unison", url: "https://unison.boidu.dev" },
-  { name: "Better Lyrics", url: "https://lyrics-api.boidu.dev" },
-  { name: "PaxSenix", url: "https://lyrics.paxsenix.org" },
-  { name: "SimpMusic", url: "https://api-lyrics.simpmusic.org" },
-  { name: "KuGou", url: "https://lyrics.kugou.com" },
-  { name: "Genius", url: "https://genius.com" },
+  { name: "go-aac", license: "LGPL-2.1-or-later", text: goAACLicense },
+  { name: "go-audio-stream", license: "MIT", text: goAudioStreamLicense },
+  { name: "go-m4a", license: "MIT", text: goM4ALicense },
+  { name: "simd", license: "MIT", text: simdLicense },
 ];
 
 const NAV_GROUPS = [
@@ -311,6 +283,7 @@ export function Settings({
     try {
       const stored = localStorage.getItem("wisewave-settings");
       const parsed = stored ? JSON.parse(stored) : {};
+      ["dcPreset", "dcLine1", "dcLine2", "dcLine3", "dcArt", "dcTime", "dcPause"].forEach((key) => delete parsed[key]);
       if (parsed.lyrStyle === "Glow" || parsed.lyrStyle === "Eeriee") parsed.lyrStyle = "Default";
       return {
         ...DEFAULT_SETTINGS,
@@ -331,6 +304,7 @@ export function Settings({
 
   const [activeSection, setActiveSection] = useState<string>("appearance");
   const [showLicenses, setShowLicenses] = useState(false);
+  const [showLyricsSources, setShowLyricsSources] = useState(false);
   const [query, setQuery] = useState("");
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [note, setNote] = useState<string>("");
@@ -342,6 +316,21 @@ export function Settings({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const mainRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    const button = main?.querySelector<HTMLElement>('.settings-ddb[aria-expanded="true"]');
+    const menu = button?.parentElement?.querySelector<HTMLElement>(".settings-dd-menu");
+    if (!main || !button || !menu) return;
+    const bounds = main.getBoundingClientRect();
+    const anchor = button.getBoundingClientRect();
+    const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const below = (bounds.bottom - anchor.bottom) / zoom - 8;
+    const above = (anchor.top - bounds.top) / zoom - 8;
+    const openAbove = below < menu.offsetHeight && above > below;
+    menu.dataset.above = String(openAbove);
+    menu.style.maxHeight = `${Math.max(0, Math.min(240, openAbove ? above : below))}px`;
+  }, [openDropdown]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -523,16 +512,12 @@ export function Settings({
                   event.preventDefault();
                   setOpenDropdown(r.k as string);
                   const control = event.currentTarget.parentElement;
-                  requestAnimationFrame(() => control?.querySelector<HTMLButtonElement>("[aria-selected=true]")?.focus());
+                  requestAnimationFrame(() => control?.querySelector<HTMLButtonElement>("[aria-selected=true]")?.focus({ preventScroll: true }));
                 }
               }}
               onClick={(e) => {
                 e.stopPropagation();
                 setOpenDropdown(isOpen ? null : (r.k as string));
-                if (!isOpen) {
-                  const control = e.currentTarget.parentElement;
-                  requestAnimationFrame(() => control?.querySelector(".settings-dd-menu")?.scrollIntoView({ block: "nearest" }));
-                }
               }}
             >
               <span className="ddl">{r.k === "lyrStyle" ? val === "Focus" ? "Line Focus" : "Word Flow" : String(val)}</span>
@@ -674,7 +659,7 @@ export function Settings({
 
     return (
       <div className="settings-in">
-        {matchesAbout && <button className="settings-about-search" type="button" onClick={() => { setQuery(""); setActiveSection("about"); setShowLicenses(false); }}>About WiseWave <ChevronRight size={17} /></button>}
+        {matchesAbout && <button className="settings-about-search" type="button" onClick={() => { setQuery(""); setActiveSection("about"); setShowLicenses(false); setShowLyricsSources(false); }}>About WiseWave <ChevronRight size={17} /></button>}
         {matches.map((item) => (
           <div key={item.title}>
             <h2>{item.title}</h2>
@@ -689,68 +674,14 @@ export function Settings({
 
   const currentSection = SETTINGS_SECTIONS[activeSection] || SETTINGS_SECTIONS.appearance;
 
-  const discordPreviewData = useMemo(() => {
-    const isCustom = st.dcPreset === "Custom";
-    const currentTrack = {
-      title: track?.title || "-",
-      artist: track?.artist || "-",
-      album: track?.album || track?.title || "-",
-      art: track?.album_art_url || "",
-    };
-
-    let titleText: string | null = currentTrack.title;
-    let artistText: string | null = currentTrack.artist;
-    let albumText: string | null = isCustom ? currentTrack.album : null;
-    let artworkSrc: string | null = currentTrack.art;
-    let timeMode: "both" | "elapsed" | "none" = "both";
-    const currentTimeText = track ? formatTime(currentPosition) : "--:--";
-    const totalTimeText = track ? formatTime(currentDuration) : "--:--";
-
-    if (isCustom) {
-      if (st.dcLine1 === "Track & Artist") {
-        titleText = track ? `${currentTrack.title} • ${currentTrack.artist}` : "-";
-      } else if (st.dcLine1 === "None") {
-        titleText = null;
-      }
-
-      if (st.dcLine2 === "Artist & Album") {
-        artistText = track ? `${currentTrack.artist}${currentTrack.album !== "-" ? ` • ${currentTrack.album}` : ""}` : "-";
-      } else if (st.dcLine2 === "Album") {
-        artistText = currentTrack.album;
-      } else if (st.dcLine2 === "None") {
-        artistText = null;
-      }
-
-      if (st.dcLine3 === "WiseWave") {
-        albumText = "WiseWave";
-      } else if (st.dcLine3 === "None") {
-        albumText = null;
-      }
-
-      if (st.dcArt === "WiseWave icon") {
-        artworkSrc = "wisewave_logo";
-      } else if (st.dcArt === "None") {
-        artworkSrc = null;
-      }
-
-      if (st.dcTime === "Elapsed only") {
-        timeMode = "elapsed";
-      } else if (st.dcTime === "None") {
-        timeMode = "none";
-      }
-
-    }
-
-    return {
-      titleText,
-      artistText,
-      albumText,
-      artworkSrc,
-      timeMode,
-      currentTimeText,
-      totalTimeText,
-    };
-  }, [st.dcPreset, st.dcLine1, st.dcLine2, st.dcLine3, st.dcArt, st.dcTime, track, currentPosition, currentDuration]);
+  const discordPreviewData = useMemo(() => ({
+    titleText: track?.title || "-",
+    artistText: track?.artist || "-",
+    albumText: null,
+    artworkSrc: track?.album_art_url || "",
+    currentTimeText: track ? formatTime(currentPosition) : "--:--",
+    totalTimeText: track ? formatTime(currentDuration) : "--:--",
+  }), [track, currentPosition, currentDuration]);
 
   const progressPercent = track && currentDuration > 0
     ? Math.min(100, Math.max(0, (currentPosition / currentDuration) * 100))
@@ -793,6 +724,7 @@ export function Settings({
                     setActiveSection(id);
                     setConfirmHistory(false);
                     setShowLicenses(false);
+                    setShowLyricsSources(false);
                     if (mainRef.current) mainRef.current.scrollTop = 0;
                   }}
                 >
@@ -807,7 +739,7 @@ export function Settings({
 
       <div className="settings-body">
         <header className="settings-header">
-          <strong>{query.trim() ? "Search" : showLicenses && activeSection === "about" ? "Open source licenses" : currentSection.t}</strong>
+          <strong>{query.trim() ? "Search" : showLicenses && activeSection === "about" ? showLyricsSources ? "Lyrics sources" : "Open source licenses" : currentSection.t}</strong>
           <button className="settings-close" type="button" onClick={closeSettings} aria-label="Close settings"><X size={20} /></button>
         </header>
       <main className="settings-main" ref={mainRef}>
@@ -817,17 +749,23 @@ export function Settings({
           <div className="settings-in">
 
             {activeSection === "about" && (showLicenses ? <div className="settings-about-licenses">
-              <button className="settings-about-back" type="button" onClick={() => setShowLicenses(false)}>‹ &nbsp;About</button>
-              <div className="settings-licenses-heading"><h1>Open source licenses</h1><p>Licenses and notices for included components.</p></div>
-              <section className="settings-lyrics-credits" aria-labelledby="lyrics-credits-title">
-                <h2 id="lyrics-credits-title">Lyrics credits</h2>
-                <p>A warm thank you to the people and communities behind these lyrics sources for helping bring every song to life.</p>
-                <div>{LYRICS_CREDITS.map((source) => <a key={source.name} href={source.url} target="_blank" rel="noreferrer">{source.name} <ExternalLink size={13} /></a>)}</div>
-              </section>
-              <div className="settings-license-list">{LICENSES.map((entry) => <details key={entry.name}>
-                <summary><span><strong>{entry.name}</strong><small>{entry.license}</small></span><ChevronRight size={18} /></summary>
-                <pre>{entry.text}</pre>
-              </details>)}</div>
+              {showLyricsSources ? <>
+                <button className="settings-about-back" type="button" onClick={() => { setShowLyricsSources(false); if (mainRef.current) mainRef.current.scrollTop = 0; }}><ChevronLeft size={17} aria-hidden="true" />Open source licenses</button>
+                <div className="settings-licenses-heading"><h1>Lyrics sources</h1><p>Sources and communities that provide lyrics in WiseWave.</p></div>
+                <div className="settings-license-list settings-source-list">{Object.entries(LYRIC_SOURCES).map(([id, source]) => <a key={id} href={source.url} target="_blank" rel="noopener noreferrer"><span><strong>{source.name}</strong><small>{source.notice}</small></span><ExternalLink size={17} /></a>)}</div>
+              </> : <>
+                <button className="settings-about-back" type="button" onClick={() => setShowLicenses(false)}><ChevronLeft size={17} aria-hidden="true" />About</button>
+                <div className="settings-licenses-heading"><h1>Open source licenses</h1><p>Licenses and notices for included components.</p></div>
+                <section className="settings-lyrics-credits" aria-labelledby="lyrics-credits-title">
+                  <h2 id="lyrics-credits-title">Lyrics credits</h2>
+                  <p>Thanks to the people and communities who provide lyrics for WiseWave.</p>
+                  <button type="button" onClick={() => { setShowLyricsSources(true); if (mainRef.current) mainRef.current.scrollTop = 0; }}>See all sources <ChevronRight size={17} /></button>
+                </section>
+                <div className="settings-license-list">{LICENSES.map((entry) => <details key={entry.name}>
+                  <summary><span><strong>{entry.name}</strong><small>{entry.license}</small></span><ChevronRight size={18} /></summary>
+                  <pre>{entry.text}</pre>
+                </details>)}</div>
+              </>}
             </div> : <div className="settings-about">
               <div className="settings-about-brand"><img src={appIcon} alt="" /><div><h1>WiseWave</h1><span>Desktop · Version {appVersion}</span></div></div>
               <h2>Developer</h2>
@@ -872,19 +810,13 @@ export function Settings({
                         {track && discordPreviewData.albumText !== null && (
                           <div className="discord-album">{discordPreviewData.albumText}</div>
                         )}
-                        {track && discordPreviewData.timeMode !== "none" && (
+                        {track && (
                           <div className="discord-progress">
                             <span>{discordPreviewData.currentTimeText}</span>
-                            {discordPreviewData.timeMode === "both" ? (
-                              <>
-                                <span className="discord-line" aria-hidden="true">
-                                  <i style={{ width: `${progressPercent}%` }} />
-                                </span>
-                                <span>{discordPreviewData.totalTimeText}</span>
-                              </>
-                            ) : (
-                              <span className="discord-elapsed-label">elapsed</span>
-                            )}
+                            <span className="discord-line" aria-hidden="true">
+                              <i style={{ width: `${progressPercent}%` }} />
+                            </span>
+                            <span>{discordPreviewData.totalTimeText}</span>
                           </div>
                         )}
                       </div>
@@ -894,14 +826,7 @@ export function Settings({
               </div>
             )}
 
-            {currentSection.g
-              .filter((group) => {
-                if (activeSection === "discord" && group.h === "Custom options") {
-                  return st.dc && st.dcPreset === "Custom";
-                }
-                return true;
-              })
-              .map((group) => (
+            {currentSection.g.map((group) => (
                 <div key={group.h}>
                   <h2>{group.h}</h2>
                   <div className="settings-grp">

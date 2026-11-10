@@ -48,6 +48,8 @@ func Run(icon []byte) {
 			Title:           "WiseWave",
 			Width:           1180,
 			Height:          760,
+			MinWidth:        900,
+			MinHeight:       600,
 			Maximized:       true,
 			URL:             "/",
 			BackgroundColor: "#111113",

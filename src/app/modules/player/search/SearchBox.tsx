@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { History, Search, X } from "lucide-react";
-import { Music, type Track } from "../../../mygo";
+import { History, Search, UserRound, X } from "lucide-react";
+import { Music, type CatalogArtist, type Track } from "../../../mygo";
 import { Classic } from "../../../shared/ui/Classic";
 import { Artwork } from "../../../shared/ui/Artwork";
 import { useSongMenu } from "../shared/SongMenu";
 
 const storageKey = "wisewave-search-history";
+function supportedMusicLink(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return url.protocol === "https:" && ((host === "open.spotify.com" && /^(?:\/intl-[a-z]{2})?\/track\/[A-Za-z0-9]{22}(?:\/|$)/i.test(url.pathname)) || (host === "gaana.com" && /^\/song\/[^/]+\/?$/.test(url.pathname)) || (host === "jiosaavn.com" && /^\/song\/[^/]+\/[^/]+\/?$/.test(url.pathname)));
+  } catch { return false; }
+}
 
 function loadHistory(): string[] {
   try {
@@ -31,6 +38,7 @@ export function SearchBox({
   onChange,
   onCommit,
   onSelect,
+  onArtist,
 }: {
   query: string;
   onChange: (query: string) => void;
@@ -39,13 +47,14 @@ export function SearchBox({
   results?: Track[];
   error?: string;
   onSelect: (track: Track, tracks: Track[]) => void;
-  onArtist?: (track: Track) => void;
+  onArtist?: (artist: { artist: string; artist_id?: string }) => void;
 }) {
   const openSongMenu = useSongMenu();
   const [history, setHistory] = useState(loadHistory);
   const [draft, setDraft] = useState(query);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [preview, setPreview] = useState<Track[]>([]);
+  const [artists, setArtists] = useState<CatalogArtist[]>([]);
   const [searching, setSearching] = useState(false);
   const [failed, setFailed] = useState(false);
   const [tracksFailed, setTracksFailed] = useState(false);
@@ -100,6 +109,7 @@ export function SearchBox({
     if (!open || !trimmed) {
       setSuggestions([]);
       setPreview([]);
+      setArtists([]);
       setSearching(false);
       setFailed(false);
       setTracksFailed(false);
@@ -108,19 +118,26 @@ export function SearchBox({
     let active = true;
     setSuggestions([]);
     setPreview([]);
+    setArtists([]);
     setSearching(true);
     setFailed(false);
     setTracksFailed(false);
     const timer = window.setTimeout(() => {
-      let pending = 2;
+      const isLink = supportedMusicLink(trimmed);
+      let pending = isLink ? 1 : 3;
       let failures = 0;
       const finished = (failed: boolean) => {
         if (!active) return;
         if (failed) failures++;
         if (--pending === 0) { setFailed(failures > 0); setSearching(false); }
       };
-      void Music.suggestions(trimmed).then((items) => { if (active) { setSuggestions((items || []).slice(0, 6)); setSelected(-1); } finished(false); }).catch(() => finished(true));
-      void Music.search(trimmed).then((tracks) => { if (active) { setPreview(tracks || []); setSelected(-1); } finished(false); }).catch(() => { if (active) setTracksFailed(true); finished(true); });
+      if (isLink) {
+        void Music.resolveLink(trimmed).then((track) => { if (active) { setPreview(track ? [track] : []); setSelected(-1); } finished(false); }).catch(() => { if (active) setTracksFailed(true); finished(true); });
+      } else {
+        void Music.suggestions(trimmed).then((items) => { if (active) { setSuggestions((items || []).slice(0, 6)); setSelected(-1); } finished(false); }).catch(() => finished(true));
+        void Music.search(trimmed).then((tracks) => { if (active) { setPreview(tracks || []); setSelected(-1); } finished(false); }).catch(() => { if (active) setTracksFailed(true); finished(true); });
+        void Music.artists(trimmed).then((items) => { if (active) { setArtists((items || []).slice(0, 4)); setSelected(-1); } finished(false); }).catch(() => finished(true));
+      }
     }, 180);
     return () => {
       active = false;
@@ -130,12 +147,13 @@ export function SearchBox({
 
   const showHistory = open && !draft.trim();
   const showSuggestions = open && Boolean(draft.trim());
-  const showPanel = open;
+  const showPanel = open && (showSuggestions || history.length > 0);
 
   const suggestionItems = suggestions;
   const previewItems = preview.slice(0, Math.ceil(preview.length / 2));
+  const artistItems = artists;
 
-  const count = showHistory ? history.length : suggestionItems.length + previewItems.length;
+  const count = showHistory ? history.length : suggestionItems.length + artistItems.length + previewItems.length;
   const activeIndex = selected >= 0 && selected < count ? selected : -1;
 
   useEffect(() => {
@@ -179,9 +197,14 @@ export function SearchBox({
             commitQuery(history[activeIndex]);
           } else if (showSuggestions && activeIndex >= 0 && activeIndex < suggestionItems.length) {
             commitQuery(suggestionItems[activeIndex]);
-          } else if (showSuggestions && activeIndex >= suggestionItems.length && previewItems[activeIndex - suggestionItems.length]) {
+          } else if (showSuggestions && activeIndex >= suggestionItems.length && activeIndex < suggestionItems.length + artistItems.length) {
+            const artist = artistItems[activeIndex - suggestionItems.length];
+            if (artist) onArtist?.({ artist: artist.name, artist_id: artist.id });
+            setOpen(false);
+            setSelected(-1);
+          } else if (showSuggestions && activeIndex >= suggestionItems.length + artistItems.length && previewItems[activeIndex - suggestionItems.length - artistItems.length]) {
             save(draft);
-            onSelect(previewItems[activeIndex - suggestionItems.length], preview);
+            onSelect(previewItems[activeIndex - suggestionItems.length - artistItems.length], preview);
             setOpen(false);
             setSelected(-1);
           } else if (draft.trim()) {
@@ -265,17 +288,16 @@ export function SearchBox({
                   <button
                     type="button"
                     className="search-dropdown-clear"
-                    disabled={!history.length}
                     onPointerDown={(e) => e.preventDefault()}
                     onClick={() => {
                       update([]);
                       setSelected(-1);
+                      setOpen(false);
                     }}
                   >
                     Clear all
                   </button>
                 </div>
-                {!history.length && <p className="search-dropdown-message">No recent searches</p>}
                 {history.map((item, index) => (
                   <div
                     className={`search-history-row ${activeIndex === index ? "selected" : ""}`}
@@ -339,9 +361,27 @@ export function SearchBox({
                     </button>
                   </div>
                 ))}
+                {artistItems.length > 0 && <div className="search-dropdown-header">Artists</div>}
+                {artistItems.map((artist, index) => {
+                  const optionIndex = suggestionItems.length + index;
+                  return <div
+                    className={`search-result search-artist ${activeIndex === optionIndex ? "selected" : ""}`}
+                    key={artist.id}
+                    id={`search-option-${optionIndex}`}
+                    data-search-index={optionIndex}
+                    role="option"
+                    aria-selected={activeIndex === optionIndex}
+                    onPointerMove={() => setSelected(optionIndex)}
+                  >
+                    <button type="button" className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { onArtist?.({ artist: artist.name, artist_id: artist.id }); setOpen(false); setSelected(-1); }}>
+                      <span className="search-artist-cover"><UserRound className="search-artist-placeholder" size={24} /><Artwork src={artist.artwork_url} size={48} onFail={() => undefined} /></span>
+                      <span className="search-result-info"><strong>{artist.name}</strong><small>Artist</small></span>
+                    </button>
+                  </div>;
+                })}
                 {previewItems.length > 0 && <div className="search-dropdown-header">Tracks</div>}
                 {previewItems.map((track, index) => {
-                  const optionIndex = suggestionItems.length + index;
+                  const optionIndex = suggestionItems.length + artistItems.length + index;
                   return (
                     <div
                       className={`search-result ${activeIndex === optionIndex ? "selected" : ""}`}
@@ -362,11 +402,8 @@ export function SearchBox({
                     </div>
                   );
                 })}
-                {searching && !suggestionItems.length && !preview.length && (
-                  <p className="search-dropdown-message" role="status">Searching…</p>
-                )}
                 {tracksFailed && suggestionItems.length > 0 && <p className="search-dropdown-message" role="status">Tracks couldn’t be loaded.</p>}
-                {!searching && !suggestionItems.length && !preview.length && (
+                {!searching && !suggestionItems.length && !artistItems.length && !preview.length && (
                   <p className="search-dropdown-message">{failed ? "Search is unavailable. Try again." : "No results found"}</p>
                 )}
               </div>

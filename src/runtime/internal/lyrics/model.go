@@ -36,31 +36,37 @@ type TrackMeta struct {
 }
 
 type LyricsDocument struct {
-	Source       string  `json:"source"`
-	Type         string  `json:"type"`
-	TrackName    string  `json:"track_name"`
-	ArtistName   string  `json:"artist_name"`
-	AlbumName    string  `json:"album_name,omitempty"`
-	Duration     float64 `json:"duration,omitempty"`
-	Instrumental bool    `json:"instrumental"`
-	PlainLyrics  string  `json:"plain_lyrics"`
-	SyncedLyrics string  `json:"synced_lyrics"`
-	Lines        []Line  `json:"lines,omitempty"`
+	Source         string  `json:"source"`
+	SourceURL      string  `json:"source_url,omitempty"`
+	Contributor    string  `json:"contributor,omitempty"`
+	ContributorURL string  `json:"contributor_url,omitempty"`
+	Type           string  `json:"type"`
+	TrackName      string  `json:"track_name"`
+	ArtistName     string  `json:"artist_name"`
+	AlbumName      string  `json:"album_name,omitempty"`
+	Duration       float64 `json:"duration,omitempty"`
+	Instrumental   bool    `json:"instrumental"`
+	PlainLyrics    string  `json:"plain_lyrics"`
+	SyncedLyrics   string  `json:"synced_lyrics"`
+	Lines          []Line  `json:"lines,omitempty"`
 }
 
 type Record struct {
-	Refining     bool    `json:"refining,omitempty"`
-	ID           int64   `json:"id,omitempty"`
-	Source       string  `json:"source"`
-	Type         string  `json:"type"`
-	TrackName    string  `json:"track_name"`
-	ArtistName   string  `json:"artist_name"`
-	AlbumName    string  `json:"album_name"`
-	Duration     float64 `json:"duration"`
-	Instrumental bool    `json:"instrumental"`
-	PlainLyrics  string  `json:"plain_lyrics"`
-	SyncedLyrics string  `json:"synced_lyrics"`
-	Lines        []Line  `json:"lines,omitempty"`
+	Refining       bool    `json:"refining,omitempty"`
+	ID             int64   `json:"id,omitempty"`
+	Source         string  `json:"source"`
+	SourceURL      string  `json:"source_url,omitempty"`
+	Contributor    string  `json:"contributor,omitempty"`
+	ContributorURL string  `json:"contributor_url,omitempty"`
+	Type           string  `json:"type"`
+	TrackName      string  `json:"track_name"`
+	ArtistName     string  `json:"artist_name"`
+	AlbumName      string  `json:"album_name"`
+	Duration       float64 `json:"duration"`
+	Instrumental   bool    `json:"instrumental"`
+	PlainLyrics    string  `json:"plain_lyrics"`
+	SyncedLyrics   string  `json:"synced_lyrics"`
+	Lines          []Line  `json:"lines,omitempty"`
 }
 
 type Provider interface {

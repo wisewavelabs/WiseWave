@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,7 +27,7 @@ type Playback struct {
 	prefetchCancel  context.CancelFunc
 	mu              sync.Mutex
 	player          *audio.Player
-	decoder         *opusDecoder
+	decoder         audio.Decoder
 	streamBuf       *streamBuffer
 	version         uint64
 	cancel          context.CancelFunc
@@ -35,6 +36,7 @@ type Playback struct {
 	currentID       string
 	bitrate         int
 	codec           string
+	duration        time.Duration
 	loudness        float64
 	equalizer       atomic.Int32
 	maxBitrate      atomic.Int32
@@ -76,7 +78,7 @@ func (p *Playback) Prepare(id string, position float64) error {
 	return p.load(id, max(0, min(position, 86400)), false)
 }
 func (p *Playback) load(id string, position float64, start bool) error {
-	if !videoID.MatchString(id) {
+	if !validTrackID(id) {
 		return errors.New("Invalid track")
 	}
 	p.mu.Lock()
@@ -91,6 +93,9 @@ func (p *Playback) load(id string, position float64, start bool) error {
 		p.player.Close()
 		p.player = nil
 	}
+	if closer, ok := p.decoder.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
 	if p.streamBuf != nil {
 		p.streamBuf.Close()
 		p.streamBuf = nil
@@ -99,6 +104,7 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	p.err = ""
 	p.bitrate = 0
 	p.codec = ""
+	p.duration = 0
 	p.loudness = 0
 	p.segments = nil
 	p.mu.Unlock()
@@ -119,23 +125,26 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	p.cancel = cancel
 	p.mu.Unlock()
 
-	go func() {
-		segCtx, segCancel := context.WithTimeout(context.Background(), 4*time.Second)
-		defer segCancel()
-		if segs, err := innertube.DefaultSponsorBlock.GetSegments(segCtx, id); err == nil {
-			p.mu.Lock()
-			if p.version == version {
-				p.segments = segs
+	if videoID.MatchString(id) {
+		go func() {
+			segCtx, segCancel := context.WithTimeout(context.Background(), 4*time.Second)
+			defer segCancel()
+			if segs, err := innertube.DefaultSponsorBlock.GetSegments(segCtx, id); err == nil {
+				p.mu.Lock()
+				if p.version == version {
+					p.segments = segs
+				}
+				p.mu.Unlock()
 			}
-			p.mu.Unlock()
-		}
-	}()
+		}()
+	}
 
 	var sb *streamBuffer
-	var decoder *opusDecoder
+	var decoder audio.Decoder
 	var bitrate int
+	var duration time.Duration
 	var cached *cachedAudio
-	if p.audioCache != nil {
+	if p.audioCache != nil && videoID.MatchString(id) {
 		var err error
 		cached, err = p.audioCache.get(id)
 		if err != nil {
@@ -171,6 +180,7 @@ func (p *Playback) load(id string, position float64, start bool) error {
 			return errors.New("Cached audio could not be decoded; try again")
 		}
 		bitrate = cached.bitrate
+		duration = cached.duration
 	} else {
 		stream, err := p.resolveStream(ctx, id)
 		if err != nil {
@@ -178,26 +188,20 @@ func (p *Playback) load(id string, position float64, start bool) error {
 		}
 
 		fetchStream := func(streamURL string) (*http.Response, error) {
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
-			if err != nil {
-				return nil, err
-			}
-			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-			return p.music.http.Do(req)
+			return openAudioStream(ctx, p.music.http, streamURL, audioUserAgent)
 		}
 
-		response, err := fetchStream(stream.URL)
-		if err != nil || (response != nil && response.StatusCode != http.StatusOK) {
+		isHLS := stream.IsHLS || strings.Contains(strings.ToLower(stream.MimeType), "mpegurl")
+		var response *http.Response
+		if !isHLS {
+			response, err = fetchStream(stream.URL)
+		}
+		if !isHLS && (err != nil || (response != nil && response.StatusCode != http.StatusOK)) {
 			if response != nil {
 				_ = response.Body.Close()
 			}
 			p.music.streams.Invalidate(id)
-			resolved, resErr := p.music.client.ResolveAudio(ctx, id, innertube.StreamOptions{
-				PreferredCodec: innertube.CodecOpus,
-				RequireCodec:   true,
-				Validate:       true,
-				MaxBitrate:     int(p.maxBitrate.Load()),
-			})
+			resolved, resErr := p.music.resolveAudio(ctx, id, int(p.maxBitrate.Load()))
 			if resErr != nil {
 				return errors.New("Audio could not be loaded")
 			}
@@ -205,25 +209,54 @@ func (p *Playback) load(id string, position float64, start bool) error {
 				return errors.New("Audio quality could not be applied")
 			}
 			stream = resolved
+			isHLS = stream.IsHLS || strings.Contains(strings.ToLower(stream.MimeType), "mpegurl")
 			p.music.streams.Put(id, *resolved)
-			response, err = fetchStream(stream.URL)
-			if err != nil || (response != nil && response.StatusCode != http.StatusOK) {
-				if response != nil {
-					_ = response.Body.Close()
+			if !isHLS {
+				response, err = fetchStream(stream.URL)
+				if err != nil || (response != nil && response.StatusCode != http.StatusOK) {
+					if response != nil {
+						_ = response.Body.Close()
+					}
+					cancel()
+					return errors.New("Audio could not be loaded")
 				}
-				cancel()
-				return errors.New("Audio could not be loaded")
 			}
 		}
 
 		bitrate = stream.Bitrate
-		duration := time.Duration(stream.DurationMs) * time.Millisecond
-		sb = newStreamBuffer(innertube.WrapIfSABR(response), cancel, response.ContentLength, bitrate, duration, func(data []byte) { p.storeAudio(id, data, bitrate, duration) })
-		decoder, err = newOpus(sb)
+		duration = time.Duration(stream.DurationMs) * time.Millisecond
+		if isHLS {
+			decoder, err = newHLSAACDecoder(ctx, stream.URL)
+			if err != nil {
+				p.music.streams.Invalidate(id)
+				if refreshed, refreshErr := p.music.resolveAudio(ctx, id, int(p.maxBitrate.Load())); refreshErr == nil && (refreshed.IsHLS || strings.Contains(strings.ToLower(refreshed.MimeType), "mpegurl")) {
+					stream = refreshed
+					decoder, err = newHLSAACDecoder(ctx, stream.URL)
+					if err == nil {
+						p.music.streams.Put(id, *refreshed)
+					}
+				}
+			}
+		} else if strings.Contains(strings.ToLower(stream.MimeType), "mp4") || strings.Contains(strings.ToLower(stream.MimeType), "aac") || stream.Codec == "AAC" {
+			data, readErr := io.ReadAll(io.LimitReader(innertube.WrapIfSABR(response), maxAACSourceBytes+1))
+			_ = response.Body.Close()
+			if readErr != nil {
+				err = readErr
+			} else if len(data) > maxAACSourceBytes {
+				err = errors.New("AAC source exceeds playback limit")
+			} else {
+				decoder, err = newM4AAACDecoder(data)
+			}
+		} else {
+			sb = newStreamBuffer(innertube.WrapIfSABR(response), cancel, response.ContentLength, bitrate, duration, func(data []byte) { p.storeAudio(id, data, bitrate, duration) })
+			decoder, err = newOpus(sb)
+		}
 		if err != nil {
-			sb.Close()
+			if sb != nil {
+				sb.Close()
+			}
 			cancel()
-			return errors.New("Audio could not be decoded")
+			return errors.New("Audio format could not be decoded")
 		}
 
 	}
@@ -231,12 +264,21 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if version != p.version {
-		decoder.Close()
-		sb.Close()
+		if closer, ok := decoder.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+		if sb != nil {
+			sb.Close()
+		}
 		return nil
 	}
+	if duration <= 0 && decoder.Len() > 0 && decoder.SampleRate() > 0 {
+		duration = time.Duration(decoder.Len()) * time.Second / time.Duration(decoder.SampleRate())
+	}
 
-	decoder.equalizer = &p.equalizer
+	if opus, ok := decoder.(*opusDecoder); ok {
+		opus.equalizer = &p.equalizer
+	}
 	player := audio.NewPlayer(decoder)
 	targetGain := innertube.CalculateLoudnessGain(p.loudness, p.normalize)
 	player.SetVolume(p.volume * targetGain)
@@ -244,7 +286,8 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	p.decoder = decoder
 	p.streamBuf = sb
 	p.bitrate = bitrate
-	p.codec = "Opus"
+	p.codec = streamCodecName(decoder)
+	p.duration = duration
 	if position > 0 {
 		player.Seek(time.Duration(position * float64(time.Second)))
 	}
@@ -257,24 +300,31 @@ func (p *Playback) load(id string, position float64, start bool) error {
 		p.player = nil
 		p.decoder = nil
 		p.streamBuf = nil
-		sb.Close()
+		if closer, ok := decoder.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+		if sb != nil {
+			sb.Close()
+		}
 		return errors.New("Audio output is unavailable")
 	}
 	keep = true
 
-	go func() {
-		lCtx, lCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer lCancel()
-		if l, err := p.music.client.Loudness(lCtx, id); err == nil && l.LoudnessDB != 0 {
-			p.mu.Lock()
-			if p.version == version && p.player != nil {
-				p.loudness = l.LoudnessDB
-				gain := innertube.CalculateLoudnessGain(p.loudness, p.normalize)
-				p.player.SetVolume(p.volume * gain)
+	if videoID.MatchString(id) {
+		go func() {
+			lCtx, lCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer lCancel()
+			if l, err := p.music.client.Loudness(lCtx, id); err == nil && l.LoudnessDB != 0 {
+				p.mu.Lock()
+				if p.version == version && p.player != nil {
+					p.loudness = l.LoudnessDB
+					gain := innertube.CalculateLoudnessGain(p.loudness, p.normalize)
+					p.player.SetVolume(p.volume * gain)
+				}
+				p.mu.Unlock()
 			}
-			p.mu.Unlock()
-		}
-	}()
+		}()
+	}
 
 	return nil
 }
@@ -407,7 +457,7 @@ func (p *Playback) resolveStream(ctx context.Context, id string) (*innertube.Res
 		return stream, nil
 	}
 	p.music.streams.Invalidate(id)
-	stream, err := p.music.client.ResolveAudio(ctx, id, innertube.StreamOptions{PreferredCodec: innertube.CodecOpus, RequireCodec: true, Validate: true, MaxBitrate: int(p.maxBitrate.Load())})
+	stream, err := p.music.resolveAudio(ctx, id, int(p.maxBitrate.Load()))
 	if err == nil {
 		p.music.streams.Put(id, *stream)
 	}
@@ -427,7 +477,7 @@ func (p *Playback) Prefetch(id string) {
 	p.prefetchID = id
 	p.prefetchVersion++
 	version := p.prefetchVersion
-	if !videoID.MatchString(id) {
+	if !validTrackID(id) {
 		p.mu.Unlock()
 		return
 	}
@@ -444,7 +494,7 @@ func (p *Playback) Prefetch(id string) {
 			}
 			p.mu.Unlock()
 		}()
-		if p.audioCache != nil {
+		if p.audioCache != nil && videoID.MatchString(id) {
 			cached, err := p.audioCache.get(id)
 			if err != nil {
 				log.Printf("read prefetched audio cache for %s: %v", id, err)
@@ -463,16 +513,10 @@ func (p *Playback) Prefetch(id string) {
 			}
 			return
 		}
-		if p.audioCache == nil {
+		if p.audioCache == nil || stream.Codec == "AAC" || stream.IsHLS || !videoID.MatchString(id) {
 			return
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, stream.URL, nil)
-		if err != nil {
-			log.Printf("prefetch audio request for %s: %v", id, err)
-			return
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-		response, err := p.music.http.Do(req)
+		response, err := openAudioStream(ctx, p.music.http, stream.URL, audioUserAgent)
 		if err != nil {
 			if ctx.Err() == nil {
 				log.Printf("prefetch audio for %s: %v", id, err)
@@ -532,6 +576,13 @@ func (p *Playback) State() PlaybackState {
 	if p.streamBuf != nil {
 		bufferAhead = p.streamBuf.BufferAhead(pos)
 		duration = p.streamBuf.duration.Seconds()
+	} else if p.duration > 0 {
+		duration = p.duration.Seconds()
+	}
+	aacBuffering := false
+	if decoder, ok := p.decoder.(*aacDecoder); ok {
+		bufferAhead = decoder.BufferAhead(p.bitrate)
+		aacBuffering = decoder.waiting.Load()
 	}
 	latencyMs := 0
 	if p.player.Playing() {
@@ -548,7 +599,7 @@ func (p *Playback) State() PlaybackState {
 		SampleRate:  sampleRate,
 		Channels:    channels,
 		BufferAhead: bufferAhead,
-		Buffering:   p.player.Playing() && p.streamBuf != nil && p.streamBuf.waiting.Load() > 0,
+		Buffering:   p.player.Playing() && ((p.streamBuf != nil && p.streamBuf.waiting.Load() > 0) || aacBuffering),
 		LatencyMs:   latencyMs,
 		LoudnessDb:  p.loudness,
 	}
@@ -807,3 +858,14 @@ func (d *opusDecoder) SetPosition(frame int64) error {
 }
 
 func (d *opusDecoder) Close() error { return d.sb.Close() }
+
+func streamCodecName(decoder audio.Decoder) string {
+	switch decoder.(type) {
+	case *opusDecoder:
+		return "Opus"
+	case *aacDecoder:
+		return "AAC"
+	default:
+		return "Unknown"
+	}
+}

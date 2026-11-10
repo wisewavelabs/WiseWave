@@ -5,6 +5,7 @@ import { Artwork } from "../../../shared/ui/Artwork";
 import { Classic } from "../../../shared/ui/Classic";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { ArtistLinks } from "../shared/ArtistLinks";
+import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 
 const artistCache = new Map<string, { value: ArtistDetail; expires: number }>();
@@ -17,7 +18,7 @@ function cachedArtist(key: string) {
   return entry.value;
 }
 
-function loadArtist(id: string, name: string): Promise<ArtistDetail> {
+export function loadArtist(id: string, name: string): Promise<ArtistDetail> {
   const key = artistKey(id, name);
   const cached = cachedArtist(key);
   if (cached) return Promise.resolve(cached);
@@ -123,7 +124,7 @@ export function Artist({ id, name, onBack, onPlay, onArtist, onAlbum }: {
           <span className="catalog-song-number">{index + 1}</span>
           <button className="catalog-song-cover" type="button" aria-label={`Play ${track.title}`} onClick={() => play(track, tracks)}><Artwork src={track.album_art_url} size={48} lazy /><span><Play size={16} fill="currentColor" /></span></button>
           <div className="catalog-song-info"><button className="song-menu-title" type="button" onContextMenu={(event) => openSongMenu(event, track)} onClick={() => play(track, tracks)}><MarqueeText>{track.title}</MarqueeText></button><MarqueeText><ArtistLinks track={track} onOpen={onArtist} /></MarqueeText></div>
-          <span className="catalog-song-duration">{track.duration}</span>
+          <span className="catalog-song-duration">{trackDurationLabel(track)}</span>
         </div>)}</div> : <p className="feed-message">No songs available for this artist.</p>}
         {tracks.length > 20 && <button className="artist-show-all" type="button" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? "Show less" : `Show all ${tracks.length} songs`}</button>}
       </section>

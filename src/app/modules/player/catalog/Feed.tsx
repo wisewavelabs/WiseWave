@@ -1,6 +1,6 @@
 import { Classic } from "../../../shared/ui/Classic";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ChevronLeft, ChevronRight, Clock3, Heart, History, ListPlus, Play, Plus, Search, Shuffle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock3, History, ListPlus, Play, Search, Shuffle } from "lucide-react";
 import { Music, type CatalogAlbum, type CatalogArtist, type Track } from "../../../mygo";
 import { SearchResults, type SearchCategory } from "../search/SearchResults";
 import { Artwork, artworkURL, hasArtworkURL } from "../../../shared/ui/Artwork";
@@ -9,6 +9,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { ArtistLinks } from "../shared/ArtistLinks";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { useArtworkTheme } from "../shared/artworkColor";
+import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 
 function Rows({
@@ -93,27 +94,6 @@ function Rows({
                 <Play size={16} fill="currentColor" />
               </button>
             </Tooltip>
-          </div>
-          <div className="card-library">
-            {playlists.length > 0 && (
-              <label aria-label="Add to playlist">
-                <Plus size={15} />
-                <select
-                  aria-label={`Add ${track.title} to playlist`}
-                  value=""
-                  onChange={(event) => {
-                    if (event.target.value) onAdd(event.target.value, track);
-                  }}
-                >
-                  <option value="">Add to playlist</option>
-                  {playlists.map((playlist) => (
-                    <option value={playlist.id} key={playlist.id}>
-                      {playlist.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
           </div>
           <button className="card-title song-menu-title" type="button" onContextMenu={(event) => openSongMenu(event, track)} onClick={() => onPlay(track, validTracks)}>
             <MarqueeText className="track-title">{track.title}</MarqueeText>
@@ -613,29 +593,8 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
                           <ArtistLinks track={track} onOpen={onArtist} />
                         </MarqueeText>
                       </span>
-
-                      <span className="song-duration-cell" onClick={(e) => e.stopPropagation()}>
-                        <span className="duration-digits">{track.duration}</span>
-                        <button
-                          className="detail-icon"
-                          type="button"
-                          aria-label={`${liked.some((item) => item.id === track.id) ? "Unlike" : "Like"} ${track.title}`}
-                          aria-pressed={liked.some((item) => item.id === track.id)}
-                          onClick={() => onLike(track)}
-                        >
-                          <Heart
-                            size={17}
-                            fill={liked.some((item) => item.id === track.id) ? "currentColor" : "none"}
-                          />
-                        </button>
-                        <button
-                          className="detail-icon"
-                          type="button"
-                          aria-label={`Add ${track.title} to queue`}
-                          onClick={() => onQueue(track)}
-                        >
-                          <ListPlus size={20} />
-                        </button>
+                      <span className="song-duration-cell">
+                        <span className="duration-digits">{trackDurationLabel(track)}</span>
                       </span>
                     </span>
                   </div>

@@ -19,34 +19,28 @@ import { Shortcuts } from "./shared/Shortcuts";
 import { Library } from "./library/Library";
 import { Collection } from "./library/Collection";
 import { useLibrary } from "./library/useLibrary";
+import { PlaylistMenuProvider } from "./library/PlaylistMenu";
 import { Album } from "./catalog/Album";
 import { Artist } from "./catalog/Artist";
 import { ArtistLinks } from "./shared/ArtistLinks";
+import { ArtistAbout } from "./shared/ArtistAbout";
 import { useMusic } from "./playback/useMusic";
 import { Lyrics } from "./lyric-view/Lyrics";
 import { PlayerAlert } from "./shared/PlayerAlert";
 import { ArtworkViewer } from "./shared/ArtworkViewer";
-import { useArtworkTheme } from "./shared/artworkColor";
 import { SongMenuProvider, SongMenuTarget } from "./shared/SongMenu";
 
 export function Player() {
   const [nowPlaying, setNowPlaying] = useState(true);
   const [artworkOpen, setArtworkOpen] = useState(false);
-  const [libraryWidth, setLibraryWidth] = useState(340);
-  const [nowPlayingWidth, setNowPlayingWidth] = useState(276);
+  const [libraryWidth, setLibraryWidth] = useState(335);
+  const [nowPlayingWidth, setNowPlayingWidth] = useState(281);
   const [resizing, setResizing] = useState(false);
   const music = useMusic();
-  const artworkTheme = useArtworkTheme(music.track);
-  const [artworkBackdrop, setArtworkBackdrop] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("wisewave-settings") || "{}").art !== false; }
-    catch { return true; }
-  });
-  useEffect(() => {
-    const update = (event: Event) => setArtworkBackdrop((event as CustomEvent<{ art?: boolean }>).detail?.art !== false);
-    window.addEventListener("wisewave-settings-changed", update);
-    return () => window.removeEventListener("wisewave-settings-changed", update);
-  }, []);
   const library = useLibrary();
+  useEffect(() => {
+    if (music.track?.id && music.duration > 0) library.ensureDuration(music.track.id, music.duration);
+  }, [music.track?.id, music.duration]);
   const [pages, setPages] = useState<{ view: "home" | "search" | "mix" | "lyrics" | "artist" | "liked" | "playlist" | "album"; albumId?: string; query?: string; category?: SearchCategory; mix?: Track; artist?: { artist: string; artist_id?: string }; playlistId?: string }[]>([{ view: "home" }]);
   const [pageIndex, setPageIndex] = useState(0);
   const page = pages[pageIndex];
@@ -201,30 +195,31 @@ export function Player() {
     }, 350);
     return () => { active = false; window.clearTimeout(timer); };
   }, [query]);
-  return <SongMenuProvider liked={library.liked} playlists={library.playlists} onLike={library.toggleLike} onAdd={library.add} onCreateAndAdd={(name, description, track, cover) => { const playlist = library.create(name, description, cover); library.add(playlist.id, track); }} onRemove={library.remove} onRemoveQueue={(index, track) => music.setQueue((items) => items[index]?.id === track.id ? items.filter((_, itemIndex) => itemIndex !== index) : items)} onQueue={(track) => music.setQueue((items) => items.some((item) => item.id === track.id) ? items : [...items, track])} onArtist={(track) => navigate({ view: "artist", artist: { artist: track.artist, artist_id: track.artist_id } })} onAlbum={(id) => navigate({ view: "album", albumId: id })} onRadio={(track) => navigate({ view: "mix", mix: track })} onError={music.setError}><main className="player" style={{ "--artwork-backdrop": artworkTheme.background } as React.CSSProperties}>
+  return <PlaylistMenuProvider playlists={library.playlists} onEdit={library.edit} onDelete={(playlist) => { library.removePlaylist(playlist.id); if (page.view === "playlist" && page.playlistId === playlist.id) navigate({ view: "home" }); }} onPlay={(playlist) => { if (playlist.tracks.length) music.play(playlist.tracks[0], playlist.tracks); }} onQueue={(playlist) => music.setQueue((items) => [...items, ...playlist.tracks.filter((track, index, tracks) => !items.some((item) => item.id === track.id) && tracks.findIndex((item) => item.id === track.id) === index)])}><SongMenuProvider liked={library.liked} playlists={library.playlists} onLike={library.toggleLike} onAdd={library.add} onCreateAndAdd={(name, description, track, cover) => { const playlist = library.create(name, description, cover); library.add(playlist.id, track); }} onRemove={library.remove} onRemoveQueue={(index, track) => music.setQueue((items) => items[index]?.id === track.id ? items.filter((_, itemIndex) => itemIndex !== index) : items)} onQueue={(track) => music.setQueue((items) => items.some((item) => item.id === track.id) ? items : [...items, track])} onArtist={(track) => navigate({ view: "artist", artist: { artist: track.artist, artist_id: track.artist_id } })} onAlbum={(id) => navigate({ view: "album", albumId: id })} onRadio={(track) => navigate({ view: "mix", mix: track })} onError={music.setError}><main className="player">
     <header className="topbar">
       <div className="history-controls"><IconButton label="Go back" disabled={pageIndex === 0} onClick={() => goHistory(pageIndex - 1)}><ChevronLeft /></IconButton><IconButton label="Go forward" disabled={pageIndex >= pages.length - 1} onClick={() => goHistory(pageIndex + 1)}><ChevronRight /></IconButton></div>
       <div className="search-area"><Tooltip label="Home"><button className="home-button" type="button" aria-label="Home" onClick={() => navigate({ view: "home" })}><HomeIcon className="home-icon" /></button></Tooltip><SearchBox onArtist={(artist) => navigate({ view: "artist", artist })} results={results} loading={searchLoading} error={searchError} onSelect={(track, tracks) => music.play(track, tracks)} query={query} onChange={search} onCommit={(save) => { saveSearch.current = save; }} /></div>
       <div className="top-spacer"><Connection music={music} /><Tooltip label={music.privateListening ? "Private listening on" : "Private listening off"}><button className="privacy-trigger" type="button" aria-label={music.privateListening ? "Private listening on. Show activity on Discord" : "Private listening off. Hide activity on Discord"} aria-pressed={music.privateListening} onClick={music.togglePrivateListening}>{music.privateListening ? <LockKeyhole size={20} /> : <LockKeyholeOpen size={20} />}</button></Tooltip><Tooltip label="Settings"><button className="settings-trigger" type="button" aria-label="Settings" aria-pressed={settingsOpen} onClick={() => { setSettingsClicks((value) => value + 1); setSettingsOpen(true); }}><SettingsLottieIcon clicks={settingsClicks} /></button></Tooltip></div>
     </header>
     <div className="workspace">
-      <><Library width={libraryWidth} likedCount={library.liked.length} playlists={library.playlists} active={page.playlistId || page.view} onOpen={(id) => navigate(id === "liked" ? { view: id } : { view: "playlist", playlistId: id })} onCreate={(name, description, cover) => { const playlist = library.create(name, description, cover); navigate({ view: "playlist", playlistId: playlist.id }); }} /><ResizeHandle label="Resize library sidebar" min={280} max={420} value={libraryWidth} onChange={setLibraryWidth} /></>
-      <section ref={homeRef} data-artwork-backdrop={artworkBackdrop} className={`home-view ${page.view === "mix" ? "mix-mode" : ""}`}>
-        {page.view === "album" && page.albumId ? <Album id={page.albumId} onBack={() => pageIndex > 0 ? goHistory(pageIndex - 1) : navigate({ view: "home" })} onPlay={music.play} onArtist={(artist) => navigate({ view: "artist", artist })} /> : page.view === "liked" || page.view === "playlist" ? <Collection key={page.playlistId || page.view} kind={page.view} playlist={library.playlists.find((item) => item.id === page.playlistId)} onArtist={(artist) => navigate({ view: "artist", artist })} tracks={page.view === "liked" ? library.liked : library.playlists.find((item) => item.id === page.playlistId)?.tracks || []} onPlay={music.play} /> : page.view === "artist" && page.artist ? <Artist key={page.artist.artist_id || page.artist.artist} id={page.artist.artist_id || ""} name={page.artist.artist} onBack={() => pageIndex > 0 ? goHistory(pageIndex - 1) : navigate({ view: "home" })} onPlay={music.play} onArtist={(artist) => navigate({ view: "artist", artist })} onAlbum={(albumId) => navigate({ view: "album", albumId })} /> : lyricsOpen && music.track ? <Lyrics seekVersion={music.seekVersion} lines={music.lyrics} plain={music.plainLyrics} loading={music.lyricsLoading} position={music.position} duration={music.duration} playing={music.playing} track={music.track} onSeek={music.seek} /> : <Feed history={music.history} popular={music.popular} forYou={music.forYou} searchResults={results} albumResults={albumResults} artistResults={artistResults} searchLoading={searchLoading} searchError={searchError} searchQuery={query.trim()} searchCategory={page.category || "All"} onSearchCategory={setSearchCategory} onPlay={(track, tracks) => { if (query.trim()) saveSearch.current(query); music.play(track, tracks); }} mix={page.view === "mix" ? page.mix || null : null} onMix={(mix) => navigate(mix ? { view: "mix", mix } : { view: "home" })} onArtist={(artist) => { if (query.trim()) saveSearch.current(query); navigate({ view: "artist", artist }); }} onAlbum={(albumId) => { if (query.trim()) saveSearch.current(query); navigate({ view: "album", albumId }); }} onPlaylist={(playlistId) => { if (query.trim()) saveSearch.current(query); navigate({ view: "playlist", playlistId }); }} liked={library.liked} playlists={library.playlists} onLike={library.toggleLike} onAdd={library.add} current={music.track} queue={music.queue} onQueue={(track) => { if (query.trim()) saveSearch.current(query); music.setQueue((items) => items.some((item) => item.id === track.id) ? items : [...items, track]); }} />}
+      <><Library width={libraryWidth} liked={library.liked} playlists={library.playlists} active={page.playlistId || page.view} onOpen={(id) => navigate(id === "liked" ? { view: id } : { view: "playlist", playlistId: id })} onCreate={(name, description, cover) => { const playlist = library.create(name, description, cover); navigate({ view: "playlist", playlistId: playlist.id }); }} /><ResizeHandle label="Resize library sidebar" min={280} max={420} value={libraryWidth} onChange={setLibraryWidth} /></>
+      <section ref={homeRef} className={`home-view ${page.view === "mix" ? "mix-mode" : ""}`}>
+        {page.view === "album" && page.albumId ? <Album id={page.albumId} onBack={() => pageIndex > 0 ? goHistory(pageIndex - 1) : navigate({ view: "home" })} onPlay={music.play} onArtist={(artist) => navigate({ view: "artist", artist })} /> : page.view === "liked" || page.view === "playlist" ? <Collection key={page.playlistId || page.view} kind={page.view} playlist={library.playlists.find((item) => item.id === page.playlistId)} onArtist={(artist) => navigate({ view: "artist", artist })} tracks={page.view === "liked" ? library.liked : library.playlists.find((item) => item.id === page.playlistId)?.tracks || []} onPlay={music.play} /> : page.view === "artist" && page.artist ? <Artist key={page.artist.artist_id || page.artist.artist} id={page.artist.artist_id || ""} name={page.artist.artist} onBack={() => pageIndex > 0 ? goHistory(pageIndex - 1) : navigate({ view: "home" })} onPlay={music.play} onArtist={(artist) => navigate({ view: "artist", artist })} onAlbum={(albumId) => navigate({ view: "album", albumId })} /> : lyricsOpen && music.track ? <Lyrics credit={music.lyricsCredit} seekVersion={music.seekVersion} lines={music.lyrics} plain={music.plainLyrics} loading={music.lyricsLoading} position={music.position} duration={music.duration} playing={music.playing} track={music.track} onSeek={music.seek} /> : <Feed history={music.history} popular={music.popular} forYou={music.forYou} searchResults={results} albumResults={albumResults} artistResults={artistResults} searchLoading={searchLoading} searchError={searchError} searchQuery={query.trim()} searchCategory={page.category || "All"} onSearchCategory={setSearchCategory} onPlay={(track, tracks) => { if (query.trim()) saveSearch.current(query); music.play(track, tracks); }} mix={page.view === "mix" ? page.mix || null : null} onMix={(mix) => navigate(mix ? { view: "mix", mix } : { view: "home" })} onArtist={(artist) => { if (query.trim()) saveSearch.current(query); navigate({ view: "artist", artist }); }} onAlbum={(albumId) => { if (query.trim()) saveSearch.current(query); navigate({ view: "album", albumId }); }} onPlaylist={(playlistId) => { if (query.trim()) saveSearch.current(query); navigate({ view: "playlist", playlistId }); }} liked={library.liked} playlists={library.playlists} onLike={library.toggleLike} onAdd={library.add} current={music.track} queue={music.queue} onQueue={(track) => { if (query.trim()) saveSearch.current(query); music.setQueue((items) => items.some((item) => item.id === track.id) ? items : [...items, track]); }} />}
       </section>
       {nowPlaying && <ResizeHandle invert label="Resize now playing sidebar" min={240} max={480} value={nowPlayingWidth} onChange={setNowPlayingWidth} onDraggingChange={setResizing} />}
-      <aside data-artwork-backdrop={artworkBackdrop} className={`now-playing ${nowPlaying ? "" : "collapsed"} ${resizing ? "resizing" : ""}`} style={{ width: nowPlaying ? nowPlayingWidth : 56 }}>
+      <aside className={`now-playing ${nowPlaying ? "" : "collapsed"} ${resizing ? "resizing" : ""}`} style={{ width: nowPlaying ? nowPlayingWidth : 56 }}>
         {nowPlaying ? <>
           <div className="now-heading"><IconButton label="Close now playing view" onClick={() => setNowPlaying(false)}><PanelRight size={16} /></IconButton><strong>Now playing</strong></div>
           <div className="now-playing-content player-scroll">
             {music.track ? <div className="now-track">
-              <Tooltip label="Expand cover"><button className="now-artwork" type="button" aria-label="Expand album artwork" onClick={() => setArtworkOpen(true)}><Artwork src={music.track.album_art_url} size={480} /></button></Tooltip>
+              <Tooltip label="Expand cover"><button className="now-artwork" type="button" aria-label="Expand album artwork" onClick={() => setArtworkOpen(true)}><Artwork src={music.track.album_art_url} size={560} /></button></Tooltip>
               <SongMenuTarget className="song-menu-title" track={music.track}>
                 <MarqueeText className="now-title">{music.track.title}</MarqueeText>
               </SongMenuTarget>
               <MarqueeText className="track-artist">
                 <ArtistLinks track={music.track} onOpen={(artist) => navigate({ view: "artist", artist })} />
               </MarqueeText>
+              <ArtistAbout track={music.track} onArtist={(artist) => navigate({ view: "artist", artist })} />
             </div> : null}
           </div>
         </> : <IconButton label="Open now playing view" onClick={() => setNowPlaying(true)}><ChevronLeft size={36} /></IconButton>}
@@ -235,6 +230,6 @@ export function Player() {
     {shortcutsOpen && <Shortcuts close={() => setShortcutsOpen(false)} />}
     <PlayerAlert message={music.error || library.error} onDismiss={() => { music.setError(""); library.clearError(); }} />
     <PlayerBar music={music} lyricsOpen={lyricsOpen} queueOpen={queueOpen} miniOpen={miniOpen} onLyrics={toggleLyrics} onQueue={() => setQueueOpen(!queueOpen)} onCloseQueue={() => setQueueOpen(false)} onMini={toggleMini} onArtist={(artist) => navigate({ view: "artist", artist })} onArtwork={() => setArtworkOpen(true)} liked={isLiked} onLike={() => { if (music.track) library.toggleLike(music.track); }} />
-  </main></SongMenuProvider>;
+  </main></SongMenuProvider></PlaylistMenuProvider>;
 }
 

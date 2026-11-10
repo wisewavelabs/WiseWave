@@ -15,6 +15,33 @@ try {
   }
 } catch {}
 
+const zoomLevels = [0.8, 0.9, 1, 1.1, 1.2, 1.3];
+try {
+  const savedZoom = Number(localStorage.getItem("wisewave-zoom"));
+  if (zoomLevels.includes(savedZoom)) document.documentElement.style.zoom = String(savedZoom);
+} catch {}
+
+document.addEventListener("keydown", (event) => {
+  if (!event.ctrlKey || event.metaKey || event.altKey) return;
+  const key = event.key.toLowerCase();
+  const increase = key === "+" || key === "=" || event.code === "NumpadAdd";
+  const decrease = key === "-" || key === "_" || event.code === "NumpadSubtract";
+  const reset = key === "0" || event.code === "Numpad0";
+  if (!increase && !decrease && !reset) return;
+
+  event.preventDefault();
+  let current = 1;
+  try {
+    const savedZoom = Number(localStorage.getItem("wisewave-zoom"));
+    if (zoomLevels.includes(savedZoom)) current = savedZoom;
+  } catch {}
+
+  const index = zoomLevels.indexOf(current);
+  const next = reset ? 1 : zoomLevels[Math.max(0, Math.min(zoomLevels.length - 1, index + (increase ? 1 : -1)))];
+  document.documentElement.style.zoom = String(next);
+  try { localStorage.setItem("wisewave-zoom", String(next)); } catch {}
+}, true);
+
 function App() {
   const [splash, setSplash] = useState<"visible" | "exiting" | "done">("visible");
   const [fontsReady, setFontsReady] = useState(false);

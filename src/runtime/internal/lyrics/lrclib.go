@@ -6,12 +6,57 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 type LrclibProvider struct {
-	httpClient *http.Client
+	httpClient  *http.Client
+	requestLock sync.Mutex
+	nextRequest time.Time
+}
+
+type lrclibResponseBody struct {
+	io.ReadCloser
+	release func()
+	once    sync.Once
+}
+
+func (body *lrclibResponseBody) Close() error {
+	err := body.ReadCloser.Close()
+	body.once.Do(body.release)
+	return err
+}
+
+func (l *LrclibProvider) request(req *http.Request) (*http.Response, error) {
+	l.requestLock.Lock()
+	if wait := time.Until(l.nextRequest); wait > 0 {
+		time.Sleep(wait)
+	}
+	resp, err := l.httpClient.Do(req)
+	if err != nil {
+		l.nextRequest = time.Now().Add(300 * time.Millisecond)
+		l.requestLock.Unlock()
+		return nil, err
+	}
+	l.nextRequest = time.Now().Add(300 * time.Millisecond)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		value := resp.Header.Get("Retry-After")
+		if seconds, parseErr := strconv.ParseInt(value, 10, 64); parseErr == nil && seconds > 0 {
+			l.nextRequest = time.Now().Add(time.Duration(seconds) * time.Second)
+		} else if retryAt, parseErr := http.ParseTime(value); parseErr == nil && retryAt.After(l.nextRequest) {
+			l.nextRequest = retryAt
+		}
+	}
+	resp.Body = &lrclibResponseBody{ReadCloser: resp.Body, release: func() {
+		if next := time.Now().Add(300 * time.Millisecond); next.After(l.nextRequest) {
+			l.nextRequest = next
+		}
+		l.requestLock.Unlock()
+	}}
+	return resp, err
 }
 
 func NewLrclibProvider() *LrclibProvider {
@@ -138,9 +183,9 @@ func (l *LrclibProvider) getExact(title, artist, album string, durationSeconds i
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "WiseWave/1.0 (https://github.com/WiseWave)")
+	req.Header.Set("User-Agent", "WiseWave/1.0 (https://wisewave.me)")
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.request(req)
 	if err != nil {
 		return nil, err
 	}
@@ -174,9 +219,9 @@ func (l *LrclibProvider) search(title, artist string) (*lrclibResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "WiseWave/1.0 (https://github.com/WiseWave)")
+	req.Header.Set("User-Agent", "WiseWave/1.0 (https://wisewave.me)")
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.request(req)
 	if err != nil {
 		return nil, err
 	}
