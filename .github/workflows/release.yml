@@ -49,25 +49,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Continue"
+          $PSNativeCommandUseErrorActionPreference = $false
+
           $tag = "latest"
           $short = $env:GITHUB_SHA.Substring(0, 7)
-          $notes = @"
-          Latest Windows installer from main.
-
-          Commit: $short
-          Updated automatically on every push to main.
-          "@
+          $notes = "Latest Windows installer from main.`n`nCommit: $short`nUpdated automatically on every push to main."
           $assets = @(Get-ChildItem -LiteralPath "dist/windows-amd64" -File | Where-Object {
             $_.Name -like "wisewave-setup-*.exe"
           })
           if ($assets.Count -ne 1) { throw "Expected one WiseWave setup installer; found $($assets.Count)." }
-          $assetPaths = $assets.FullName
 
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release delete $tag --yes --cleanup-tag
-            if ($LASTEXITCODE -ne 0) { throw "Could not replace release $tag." }
-          }
+          # Replace any previous rolling release. Missing release/tag is fine.
+          gh release delete $tag --yes --cleanup-tag *> $null
 
-          gh release create $tag --latest --title "WiseWave" --notes $notes --target $env:GITHUB_SHA @assetPaths
+          $ErrorActionPreference = "Stop"
+          gh release create $tag --latest --title "WiseWave" --notes $notes --target $env:GITHUB_SHA -- $assets.FullName
           if ($LASTEXITCODE -ne 0) { throw "Could not publish release $tag." }
