@@ -403,7 +403,7 @@ export function SearchResults({
                     onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onArtist({ artist: artist.name, artist_id: artist.id }); } }}
                   >
                     <div className="search-catalog-artwork artist-artwork">
-                      <Artwork src={artist.artwork_url} size={56} lazy />
+                      <Artwork src={artist.artwork_url} size={56} lazy placeholder="user" allowNonSquare />
                     </div>
                     <div className="search-catalog-details">
                       <span className="search-catalog-title">

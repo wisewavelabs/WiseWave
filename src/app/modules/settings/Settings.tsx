@@ -28,8 +28,6 @@ export interface SettingsProps {
   onClose: () => void;
   onClearHistory: () => boolean;
   onExportHistory: () => Promise<boolean>;
-  volume: number;
-  onVolume: (value: number) => void;
   discordEnabled: boolean;
   onDiscordEnabled: (value: boolean) => void;
   autoplay: boolean;
@@ -49,7 +47,7 @@ const DEFAULT_SETTINGS = {
   mini: false,
   startup: false,
   norm: true,
-  vol: 70,
+  vol: 100,
   auto: true,
   resume: true,
   watch: true,
@@ -265,8 +263,6 @@ export function Settings({
   onClose,
   onClearHistory,
   onExportHistory,
-  volume,
-  onVolume,
   discordEnabled,
   onDiscordEnabled,
   autoplay,
@@ -288,14 +284,13 @@ export function Settings({
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
-        vol: parsed.vol ?? DEFAULT_SETTINGS.vol,
+        vol: typeof parsed.vol === "number" && Number.isFinite(parsed.vol) ? Math.max(0, Math.min(100, parsed.vol)) : DEFAULT_SETTINGS.vol,
         auto: typeof autoplay === "boolean" ? autoplay : parsed.auto ?? DEFAULT_SETTINGS.auto,
         dc: typeof discordEnabled === "boolean" ? discordEnabled : parsed.dc ?? DEFAULT_SETTINGS.dc,
       };
     } catch {
       return {
         ...DEFAULT_SETTINGS,
-        vol: volume,
         auto: autoplay,
         dc: discordEnabled,
       };
@@ -357,7 +352,6 @@ export function Settings({
       if (key === "ui") root.dataset.ui = String(value).toLowerCase();
       if (key === "motion") root.dataset.motion = value ? "reduce" : "";
 
-      if (key === "vol" && typeof value === "number") onVolume(value);
       if (key === "auto" && typeof value === "boolean") onAutoplay(value);
       if (key === "dc" && typeof value === "boolean") onDiscordEnabled(value);
 
@@ -742,7 +736,7 @@ export function Settings({
           <strong>{query.trim() ? "Search" : showLicenses && activeSection === "about" ? showLyricsSources ? "Lyrics sources" : "Open source licenses" : currentSection.t}</strong>
           <button className="settings-close" type="button" onClick={closeSettings} aria-label="Close settings"><X size={20} /></button>
         </header>
-      <main className="settings-main" ref={mainRef}>
+      <main className="settings-main player-scroll" ref={mainRef}>
         {query.trim() ? (
           renderSearchResults()
         ) : (

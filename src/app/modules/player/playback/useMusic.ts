@@ -17,6 +17,17 @@ function readPlaybackSettings() {
   catch { return {}; }
 }
 
+function persistVolume(value: number) {
+  try {
+    const current = readPlaybackSettings();
+    if (current.vol === value) return;
+    const next = { ...current, vol: value };
+    localStorage.setItem("wisewave-settings", JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("wisewave-settings-changed", { detail: next }));
+    window.dispatchEvent(new Event("wisewave-settings-updated"));
+  } catch {}
+}
+
 function readCurrentTrack(): Track | null {
   try {
     const raw = localStorage.getItem("wisewave-current-track");
@@ -71,7 +82,7 @@ export function useMusic() {
   const bufferStall = useRef<{ position: number; since: number } | null>(null);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(() => { const value = readPlaybackSettings().vol; return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 70; });
+  const [volume, setVolume] = useState(() => { const value = readPlaybackSettings().vol; return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 100; });
   const [muted, setMuted] = useState(false);
   const volumeRef = useRef(volume);
   const mutedRef = useRef(muted);
@@ -375,8 +386,10 @@ export function useMusic() {
     });
   };
   const changeVolume = (value: number) => {
-    volumeRef.current = value; mutedRef.current = false; setVolume(value); setMuted(false);
-    volumeChain.current = volumeChain.current.then(() => Playback.volume(value / 100)).catch(() => setError("Could not change volume."));
+    const next = Math.max(0, Math.min(100, value));
+    volumeRef.current = next; mutedRef.current = false; setVolume(next); setMuted(false);
+    persistVolume(next);
+    volumeChain.current = volumeChain.current.then(() => Playback.volume(next / 100)).catch(() => setError("Could not change volume."));
   };
 
   const resetAudioEngine = async () => {

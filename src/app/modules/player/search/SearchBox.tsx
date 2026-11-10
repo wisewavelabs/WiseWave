@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { History, Search, UserRound, X } from "lucide-react";
+import { History, Search, X } from "lucide-react";
 import { Music, type CatalogArtist, type Track } from "../../../mygo";
 import { Classic } from "../../../shared/ui/Classic";
 import { Artwork } from "../../../shared/ui/Artwork";
 import { useSongMenu } from "../shared/SongMenu";
+import { loadSearchSuggest, peekSearchSuggest } from "./searchCache";
 
 const storageKey = "wisewave-search-history";
 function supportedMusicLink(value: string) {
@@ -116,29 +117,56 @@ export function SearchBox({
       return;
     }
     let active = true;
-    setSuggestions([]);
-    setPreview([]);
-    setArtists([]);
-    setSearching(true);
-    setFailed(false);
-    setTracksFailed(false);
+    const isLink = supportedMusicLink(trimmed);
+    const cached = !isLink ? peekSearchSuggest(trimmed) : null;
+    if (cached) {
+      setSuggestions(cached.suggestions);
+      setPreview(cached.preview);
+      setArtists(cached.artists);
+      setFailed(cached.failed);
+      setTracksFailed(cached.tracksFailed);
+      setSearching(false);
+      setSelected(-1);
+    } else {
+      setSuggestions([]);
+      setPreview([]);
+      setArtists([]);
+      setSearching(true);
+      setFailed(false);
+      setTracksFailed(false);
+    }
     const timer = window.setTimeout(() => {
-      const isLink = supportedMusicLink(trimmed);
-      let pending = isLink ? 1 : 3;
-      let failures = 0;
-      const finished = (failed: boolean) => {
-        if (!active) return;
-        if (failed) failures++;
-        if (--pending === 0) { setFailed(failures > 0); setSearching(false); }
-      };
       if (isLink) {
-        void Music.resolveLink(trimmed).then((track) => { if (active) { setPreview(track ? [track] : []); setSelected(-1); } finished(false); }).catch(() => { if (active) setTracksFailed(true); finished(true); });
-      } else {
-        void Music.suggestions(trimmed).then((items) => { if (active) { setSuggestions((items || []).slice(0, 6)); setSelected(-1); } finished(false); }).catch(() => finished(true));
-        void Music.search(trimmed).then((tracks) => { if (active) { setPreview(tracks || []); setSelected(-1); } finished(false); }).catch(() => { if (active) setTracksFailed(true); finished(true); });
-        void Music.artists(trimmed).then((items) => { if (active) { setArtists((items || []).slice(0, 4)); setSelected(-1); } finished(false); }).catch(() => finished(true));
+        void Music.resolveLink(trimmed).then((track) => {
+          if (!active) return;
+          setPreview(track ? [track] : []);
+          setSelected(-1);
+          setFailed(false);
+          setTracksFailed(false);
+          setSearching(false);
+        }).catch(() => {
+          if (!active) return;
+          setTracksFailed(true);
+          setFailed(true);
+          setSearching(false);
+        });
+        return;
       }
-    }, 180);
+      void loadSearchSuggest(trimmed).then((entry) => {
+        if (!active) return;
+        setSuggestions(entry.suggestions);
+        setPreview(entry.preview);
+        setArtists(entry.artists);
+        setFailed(entry.failed);
+        setTracksFailed(entry.tracksFailed);
+        setSelected(-1);
+        setSearching(false);
+      }).catch(() => {
+        if (!active) return;
+        setFailed(true);
+        setSearching(false);
+      });
+    }, cached ? 0 : 180);
     return () => {
       active = false;
       window.clearTimeout(timer);
@@ -374,7 +402,7 @@ export function SearchBox({
                     onPointerMove={() => setSelected(optionIndex)}
                   >
                     <button type="button" className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { onArtist?.({ artist: artist.name, artist_id: artist.id }); setOpen(false); setSelected(-1); }}>
-                      <span className="search-artist-cover"><UserRound className="search-artist-placeholder" size={24} /><Artwork src={artist.artwork_url} size={48} onFail={() => undefined} /></span>
+                      <span className="search-artist-cover"><Artwork src={artist.artwork_url} size={48} placeholder="user" allowNonSquare /></span>
                       <span className="search-result-info"><strong>{artist.name}</strong><small>Artist</small></span>
                     </button>
                   </div>;

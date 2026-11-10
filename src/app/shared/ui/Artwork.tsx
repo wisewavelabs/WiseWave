@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Music2 } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Music2, UserRound } from "lucide-react";
 
 const loadedUrls = new Set<string>();
 const failedUrls = new Set<string>();
@@ -120,11 +120,14 @@ function warmArtwork() {
   }
 }
 
-export function Artwork({ src, size, className = "", lazy = false, rootMargin = "1000px 800px", onFail }: { src: string; size: number; className?: string; lazy?: boolean; rootMargin?: string; onFail?: () => void }) {
+export function Artwork({ src, size, className = "", lazy = false, rootMargin = "1000px 800px", onFail, placeholder = "music", allowNonSquare = false }: { src: string; size: number; className?: string; lazy?: boolean; rootMargin?: string; onFail?: () => void; placeholder?: "music" | "user" | ReactNode; allowNonSquare?: boolean }) {
   const url = artworkURL(src, size * 2);
-  const allowWide = (() => {
+  const allowWide = allowNonSquare || (() => {
     try { return Boolean(src && isYtimg(new URL(src).hostname)); } catch { return false; }
   })();
+  const Placeholder = typeof placeholder === "string"
+    ? (placeholder === "user" ? <UserRound className="artwork-placeholder" /> : <Music2 className="artwork-placeholder" />)
+    : placeholder;
   const ref = useRef<HTMLSpanElement>(null);
   const retryTimer = useRef<number | null>(null);
   const [visible, setVisible] = useState(!lazy || loadedUrls.has(url));
@@ -174,11 +177,11 @@ export function Artwork({ src, size, className = "", lazy = false, rootMargin = 
   }, []);
 
   if (!url || isFailed) {
-    return <span className={`artwork ${className}`} aria-hidden="true"><Music2 className="artwork-placeholder" /></span>;
+    return <span className={`artwork ${className}`} aria-hidden="true">{Placeholder}</span>;
   }
 
   return <span ref={ref} className={`artwork ${className}`} data-loading={loading || undefined} aria-busy={loading}>
-    {!isLoaded && <Music2 className="artwork-placeholder" aria-hidden="true" />}
+    {!isLoaded && <span aria-hidden="true">{Placeholder}</span>}
     {(visible || isLoaded) && <img
       key={`${url}:${attempt}`}
       src={imageSrc}
