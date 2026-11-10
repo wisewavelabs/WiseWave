@@ -27,9 +27,9 @@
 
 ## Download
 
-**[Get WiseWave from GitHub Releases](https://github.com/wisewavelabs/WiseWave/releases)**
+**[Download the latest WiseWave release](https://github.com/wisewavelabs/WiseWave/releases/latest)**
 
-Release packages and changelogs are published here.
+For previous versions and their changelogs, visit the [release archive](https://github.com/wisewavelabs/WiseWave/releases). Android and Windows packages, when available, are listed under the relevant release's assets.
 
 ## Support & Community
 
