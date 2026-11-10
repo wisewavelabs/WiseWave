@@ -47,7 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wisewave-windows-amd64
-          path: dist/windows-amd64/*
+          path: dist/windows-amd64/wisewave-setup-*.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -59,8 +59,15 @@ jobs:
         shell: pwsh
         run: |
           $tag = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { $env:RELEASE_TAG }
-          $assets = Get-ChildItem -LiteralPath "dist/windows-amd64" -File
-          if (-not $assets) { throw "No Windows release assets were produced." }
+          $assets = @(Get-ChildItem -LiteralPath "dist/windows-amd64" -File | Where-Object {
+            $_.Name -like "wisewave-setup-*.exe"
+          })
+          if ($assets.Count -ne 1) { throw "Expected one WiseWave setup installer; found $($assets.Count)." }
           $assetPaths = $assets.FullName
-          gh release create $tag --generate-notes --title "WiseWave $tag" @assetPaths
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assetPaths --clobber
+          } else {
+            gh release create $tag --generate-notes --title "WiseWave $tag" @assetPaths
+          }
           if ($LASTEXITCODE -ne 0) { throw "Could not publish release $tag." }
