@@ -1,7 +1,7 @@
 import { Classic } from "../../../shared/ui/Classic";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ChevronLeft, ChevronRight, Clock3, History, ListPlus, Play, Search, Shuffle } from "lucide-react";
-import { Music, type CatalogAlbum, type CatalogArtist, type Track } from "../../../mygo";
+import { Music, type CatalogAlbum, type CatalogArtist, type CatalogPlaylist, type Track } from "../../../mygo";
 import { SearchResults, type SearchCategory } from "../search/SearchResults";
 import { Artwork, artworkURL, hasArtworkURL } from "../../../shared/ui/Artwork";
 import type { Playlist } from "../library/useLibrary";
@@ -194,7 +194,7 @@ function saveDiscoverCache(tracks: Track[], seedIndex: number, timestamp: number
   } catch {}
 }
 
-export function Feed({ history, popular, forYou, searchResults, albumResults = [], artistResults = [], searchQuery, searchCategory, onSearchCategory, searchLoading, searchError, onPlay, mix, onMix, onArtist, onAlbum, onPlaylist, onQueue, current, queue, liked, playlists, onLike, onAdd }: { liked: Track[]; playlists: Playlist[]; onLike: (track: Track) => void; onAdd: (id: string, track: Track) => void; onArtist: (track: { artist: string; artist_id?: string }) => void; onAlbum?: (albumId: string) => void; onPlaylist?: (playlistId: string) => void; onQueue: (track: Track) => void; current: Track | null; queue: Track[]; mix: Track | null; onMix: (track: Track | null) => void; history: Track[]; popular: Track[]; forYou: Track[]; searchResults: Track[]; albumResults?: CatalogAlbum[]; artistResults?: CatalogArtist[]; searchQuery: string; searchCategory: SearchCategory; onSearchCategory: (category: SearchCategory) => void; searchLoading?: boolean; searchError?: string; onPlay: (track: Track, queue: Track[]) => void }) {
+export function Feed({ history, popular, forYou, searchResults, albumResults = [], artistResults = [], playlistResults = [], searchQuery, searchCategory, onSearchCategory, searchLoading, searchError, onPlay, mix, onMix, onArtist, onAlbum, onPlaylist, onQueue, current, queue, liked, playlists, onLike, onAdd }: { liked: Track[]; playlists: Playlist[]; onLike: (track: Track) => void; onAdd: (id: string, track: Track) => void; onArtist: (track: { artist: string; artist_id?: string }) => void; onAlbum?: (albumId: string) => void; onPlaylist?: (playlistId: string) => void; onQueue: (track: Track) => void; current: Track | null; queue: Track[]; mix: Track | null; onMix: (track: Track | null) => void; history: Track[]; popular: Track[]; forYou: Track[]; searchResults: Track[]; albumResults?: CatalogAlbum[]; artistResults?: CatalogArtist[]; playlistResults?: CatalogPlaylist[]; searchQuery: string; searchCategory: SearchCategory; onSearchCategory: (category: SearchCategory) => void; searchLoading?: boolean; searchError?: string; onPlay: (track: Track, queue: Track[]) => void }) {
   const openSongMenu = useSongMenu();
   const seeds = Array.from(new Map([...history, ...forYou, ...popular].filter((track) => track.id && hasArtworkURL(track.album_art_url)).map((track) => [track.id, track])).values());
   const artists = new Set<string>();
@@ -461,7 +461,7 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
     });
     return () => { active = false; };
   }, [mix, mixRetry]);
-  if (searchQuery) return <SearchResults key={searchQuery} query={searchQuery} category={searchCategory} onCategory={onSearchCategory} loading={searchLoading} error={searchError} tracks={searchResults} albums={albumResults} artists={artistResults} playlists={playlists} liked={liked} current={current} onPlay={onPlay} onLike={onLike} onQueue={onQueue} onArtist={onArtist} onAlbum={onAlbum || (() => {})} onPlaylist={onPlaylist || (() => {})} />;
+  if (searchQuery) return <SearchResults key={searchQuery} query={searchQuery} category={searchCategory} onCategory={onSearchCategory} loading={searchLoading} error={searchError} tracks={searchResults} albums={albumResults} artists={artistResults} playlists={playlistResults} liked={liked} current={current} onPlay={onPlay} onLike={onLike} onQueue={onQueue} onArtist={onArtist} onAlbum={onAlbum || (() => {})} onPlaylist={onPlaylist || (() => {})} />;
   if (mix) {
     const visible = mixTracks.filter((track) => `${track.title} ${track.artist}`.toLowerCase().includes(mixQuery.trim().toLowerCase()));
     const shuffle = () => {

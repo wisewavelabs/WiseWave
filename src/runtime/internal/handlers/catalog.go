@@ -33,10 +33,10 @@ func (h *TrackHandler) CatalogAlbum(c *fiber.Ctx) error {
 func (h *TrackHandler) CatalogSearch(c *fiber.Ctx) error {
 	query := strings.TrimSpace(c.Query("q"))
 	kind := c.Query("type")
-	if query == "" || len(query) > 512 || (kind != "artists" && kind != "albums") {
+	if query == "" || len(query) > 512 || (kind != "artists" && kind != "albums" && kind != "playlists") {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid search"})
 	}
-	items, err := h.tube.SearchCatalog(query, kind == "artists")
+	items, err := h.tube.SearchCatalog(query, kind)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "Search unavailable. Please try again."})
 	}

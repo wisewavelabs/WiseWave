@@ -26,6 +26,19 @@ type CatalogAlbum struct {
 	ArtworkURL string `json:"artwork_url"`
 	Year       string `json:"year"`
 }
+
+type CatalogPlaylist struct {
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Author     string `json:"author"`
+	ArtworkURL string `json:"artwork_url"`
+}
+
+type PlaylistDetail struct {
+	CatalogPlaylist
+	Description string         `json:"description"`
+	Tracks      []models.Track `json:"tracks"`
+}
 type ArtistDetail struct {
 	CatalogArtist
 	BannerURL        string         `json:"banner_url"`
@@ -64,6 +77,22 @@ func textValue(value interface{}) string {
 }
 func isArtistID(id string) bool { return strings.HasPrefix(id, "UC") }
 func isAlbumID(id string) bool  { return strings.HasPrefix(id, "MPRE") || strings.HasPrefix(id, "MPLA") }
+func isPlaylistID(id string) bool {
+	return strings.HasPrefix(id, "VL") || strings.HasPrefix(id, "PL") || strings.HasPrefix(id, "OLAK5uy_")
+}
+func normalizePlaylistID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	if strings.HasPrefix(id, "VL") || strings.HasPrefix(id, "OLAK5uy_") {
+		return id
+	}
+	if strings.HasPrefix(id, "PL") {
+		return "VL" + id
+	}
+	return id
+}
 
 func parseByline(value interface{}) byline {
 	result := byline{}
@@ -98,6 +127,10 @@ var catalogIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{3,160}$`)
 
 func ValidCatalogID(id string, artist bool) bool {
 	return catalogIDPattern.MatchString(id) && ((artist && isArtistID(id)) || (!artist && isAlbumID(id)))
+}
+
+func ValidPlaylistID(id string) bool {
+	return catalogIDPattern.MatchString(id) && isPlaylistID(id)
 }
 
 func walkCatalog(value interface{}, visit func(map[string]interface{})) {
@@ -198,11 +231,18 @@ func (client *Client) browse(id string) (map[string]interface{}, error) {
 }
 
 func catalogItems(root interface{}) ([]CatalogArtist, []CatalogAlbum, []models.Track) {
+	artists, albums, _, tracks := catalogSearchItems(root)
+	return artists, albums, tracks
+}
+
+func catalogSearchItems(root interface{}) ([]CatalogArtist, []CatalogAlbum, []CatalogPlaylist, []models.Track) {
 	artists := []CatalogArtist{}
 	albums := []CatalogAlbum{}
+	playlists := []CatalogPlaylist{}
 	tracks := []models.Track{}
 	seenArtists := map[string]bool{}
 	seenAlbums := map[string]bool{}
+	seenPlaylists := map[string]bool{}
 	seenTracks := map[string]bool{}
 	walkCatalog(root, func(node map[string]interface{}) {
 		if renderer := object(node["musicResponsiveListItemRenderer"]); renderer != nil {
@@ -219,6 +259,10 @@ func catalogItems(root interface{}) ([]CatalogArtist, []CatalogAlbum, []models.T
 			return
 		}
 		id := browseID(renderer)
+		if id == "" {
+			id = stringValue(object(object(object(renderer["navigationEndpoint"])["watchEndpoint"])["playlistId"]))
+			id = normalizePlaylistID(id)
+		}
 		title := textValue(renderer["title"])
 		subtitle := renderer["subtitle"]
 		if columns := array(renderer["flexColumns"]); len(columns) > 0 {
@@ -243,8 +287,17 @@ func catalogItems(root interface{}) ([]CatalogArtist, []CatalogAlbum, []models.T
 			albums = append(albums, CatalogAlbum{ID: id, Title: title, Artist: metadata.artist, ArtworkURL: image, Year: findYear(subtitle)})
 			seenAlbums[id] = true
 		}
+		if isPlaylistID(id) && !seenPlaylists[id] && len(playlists) < 100 {
+			metadata := parseByline(subtitle)
+			author := metadata.artist
+			if author == "" {
+				author = strings.TrimSpace(textValue(subtitle))
+			}
+			playlists = append(playlists, CatalogPlaylist{ID: normalizePlaylistID(id), Title: title, Author: author, ArtworkURL: image})
+			seenPlaylists[id] = true
+		}
 	})
-	return artists, albums, tracks
+	return artists, albums, playlists, tracks
 }
 
 func findYear(value interface{}) string {
@@ -450,20 +503,89 @@ func (client *Client) Album(id string) (*AlbumDetail, error) {
 	return &AlbumDetail{CatalogAlbum: CatalogAlbum{ID: id, Title: title, Artist: metadata.artist, ArtworkURL: image, Year: findYear(header["subtitle"])}, Description: textValue(header["description"]), Tracks: tracks}, nil
 }
 
-func (client *Client) SearchCatalog(query string, artists bool) (interface{}, error) {
-	params := "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"
-	if artists {
-		params = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
+func (client *Client) SearchCatalog(query string, kind string) (interface{}, error) {
+	params := ""
+	switch kind {
+	case "artists":
+		params = "EgWKAQIgAWoKEAkQChAFEAMQBA=="
+	case "albums":
+		params = "EgWKAQIYAWoKEAkQChAFEAMQBA=="
+	case "playlists":
+		params = "EgWKAQIoAWoKEAkQChAFEAMQBA=="
 	}
-	root, err := client.catalogRequest("search", map[string]interface{}{"query": query, "params": strings.ReplaceAll(params, "%3D", "=")})
+	payload := map[string]interface{}{"query": query}
+	if params != "" {
+		payload["params"] = params
+	}
+	root, err := client.catalogRequest("search", payload)
 	if err != nil {
 		return nil, err
 	}
-	artistItems, albumItems, _ := catalogItems(root)
-	if artists {
-		return artistItems, nil
+	artists, albums, playlists, _ := catalogSearchItems(root)
+	if kind == "" || kind == "top" {
+		// Unfiltered search returns top shelves across types.
+		return map[string]interface{}{"artists": artists, "albums": albums, "playlists": playlists}, nil
 	}
-	return albumItems, nil
+	switch kind {
+	case "artists":
+		if len(artists) == 0 {
+			if top, topErr := client.catalogRequest("search", map[string]interface{}{"query": query}); topErr == nil {
+				artists, _, _, _ = catalogSearchItems(top)
+			}
+		}
+		return artists, nil
+	case "albums":
+		if len(albums) == 0 {
+			if top, topErr := client.catalogRequest("search", map[string]interface{}{"query": query}); topErr == nil {
+				_, albums, _, _ = catalogSearchItems(top)
+			}
+		}
+		return albums, nil
+	case "playlists":
+		if len(playlists) == 0 {
+			if top, topErr := client.catalogRequest("search", map[string]interface{}{"query": query}); topErr == nil {
+				_, _, playlists, _ = catalogSearchItems(top)
+			}
+		}
+		return playlists, nil
+	default:
+		return albums, nil
+	}
+}
+
+func (client *Client) Playlist(id string) (*PlaylistDetail, error) {
+	browse := normalizePlaylistID(id)
+	if !ValidPlaylistID(browse) && !ValidPlaylistID(id) {
+		return nil, fmt.Errorf("invalid playlist")
+	}
+	if browse == "" {
+		browse = id
+	}
+	root, err := client.browse(browse)
+	if err != nil {
+		return nil, err
+	}
+	header := catalogHeader(root)
+	title := textValue(header["title"])
+	if title == "" {
+		return nil, fmt.Errorf("playlist unavailable")
+	}
+	metadata := parseByline(header["subtitle"])
+	if metadata.artist == "" {
+		metadata = parseByline(header["straplineTextOne"])
+	}
+	_, _, tracks := catalogItems(root)
+	image := artwork(header["thumbnail"])
+	for i := range tracks {
+		if tracks[i].AlbumArtURL == "" {
+			tracks[i].AlbumArtURL = image
+		}
+	}
+	return &PlaylistDetail{
+		CatalogPlaylist: CatalogPlaylist{ID: browse, Title: title, Author: metadata.artist, ArtworkURL: image},
+		Description:     textValue(header["description"]),
+		Tracks:          tracks,
+	}, nil
 }
 
 func (client *Client) NewReleases() ([]CatalogAlbum, error) {

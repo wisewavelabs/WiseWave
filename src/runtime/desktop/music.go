@@ -279,7 +279,7 @@ func (m *Music) Artists(name string) ([]innertube.CatalogArtist, error) {
 	if name == "" || len(name) > 512 {
 		return nil, errors.New("Invalid artist")
 	}
-	result, err := m.client.SearchCatalog(name, true)
+	result, err := m.client.SearchCatalog(name, "artists")
 	if err != nil {
 		return nil, errors.New("Artist is unavailable")
 	}
@@ -295,7 +295,7 @@ func (m *Music) Albums(name string) ([]innertube.CatalogAlbum, error) {
 	if name == "" || len(name) > 512 {
 		return nil, errors.New("Invalid album")
 	}
-	result, err := m.client.SearchCatalog(name, false)
+	result, err := m.client.SearchCatalog(name, "albums")
 	if err != nil {
 		return nil, errors.New("Albums are unavailable")
 	}
@@ -304,6 +304,34 @@ func (m *Music) Albums(name string) ([]innertube.CatalogAlbum, error) {
 		return nil, errors.New("Albums are unavailable")
 	}
 	return albums, nil
+}
+
+func (m *Music) Playlists(name string) ([]innertube.CatalogPlaylist, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 512 {
+		return nil, errors.New("Invalid playlist")
+	}
+	result, err := m.client.SearchCatalog(name, "playlists")
+	if err != nil {
+		return nil, errors.New("Playlists are unavailable")
+	}
+	playlists, ok := result.([]innertube.CatalogPlaylist)
+	if !ok {
+		return nil, errors.New("Playlists are unavailable")
+	}
+	return playlists, nil
+}
+
+func (m *Music) Playlist(id string) (*innertube.PlaylistDetail, error) {
+	id = strings.TrimSpace(id)
+	if id == "" || len(id) > 200 {
+		return nil, errors.New("Invalid playlist")
+	}
+	playlist, err := m.client.Playlist(id)
+	if err != nil {
+		return nil, errors.New("Playlist is unavailable")
+	}
+	return playlist, nil
 }
 
 func (m *Music) Lyrics(title, artist, album string, duration int, id string) (*lyrics.Record, error) {

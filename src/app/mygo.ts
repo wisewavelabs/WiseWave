@@ -50,6 +50,13 @@ export interface CatalogArtist {
   artwork_url: string;
 }
 
+export interface CatalogPlaylist {
+  id: string;
+  title: string;
+  author: string;
+  artwork_url: string;
+}
+
 export interface DiscordState {
   track_id: string;
   title: string;
@@ -113,6 +120,15 @@ export interface PlaybackState {
   buffering: boolean;
   latency_ms: number;
   loudness_db: number;
+}
+
+export interface PlaylistDetail {
+  id: string;
+  title: string;
+  author: string;
+  artwork_url: string;
+  description: string;
+  tracks: Track[];
 }
 
 export interface Record {
@@ -195,6 +211,12 @@ export const Music = {
   },
   newReleases(): Promise<BrowseResult | null> {
     return call("Music.NewReleases");
+  },
+  playlist(id: string): Promise<PlaylistDetail | null> {
+    return call("Music.Playlist", id);
+  },
+  playlists(name: string): Promise<CatalogPlaylist[]> {
+    return call("Music.Playlists", name);
   },
   popular(): Promise<Track[]> {
     return call("Music.Popular");

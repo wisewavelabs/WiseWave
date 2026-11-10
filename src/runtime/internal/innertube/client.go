@@ -154,62 +154,33 @@ func (client *Client) Search(query string) ([]models.Track, error) {
 }
 
 func parseSearchResponse(data []byte) ([]models.Track, error) {
-	var root map[string]interface{}
+	var root interface{}
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, err
 	}
 
 	var tracks []models.Track
-
-	contents, ok := root["contents"].(map[string]interface{})
-	if !ok {
-		return tracks, nil
-	}
-
-	tabbed, ok := contents["tabbedSearchResultsRenderer"].(map[string]interface{})
-	if !ok {
-		return tracks, nil
-	}
-
-	tabs, ok := tabbed["tabs"].([]interface{})
-	if !ok || len(tabs) == 0 {
-		return tracks, nil
-	}
-
-	tabContent, ok := tabs[0].(map[string]interface{})["tabRenderer"].(map[string]interface{})["content"].(map[string]interface{})
-	if !ok {
-		return tracks, nil
-	}
-
-	sectionList, ok := tabContent["sectionListRenderer"].(map[string]interface{})["contents"].([]interface{})
-	if !ok {
-		return tracks, nil
-	}
-
-	for _, section := range sectionList {
-		shelf, ok := section.(map[string]interface{})["musicShelfRenderer"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		items, ok := shelf["contents"].([]interface{})
-		if !ok {
-			continue
-		}
-
-		for _, item := range items {
-			itemRenderer, ok := item.(map[string]interface{})["musicResponsiveListItemRenderer"].(map[string]interface{})
-			if !ok {
-				continue
+	seen := map[string]bool{}
+	var walk func(interface{})
+	walk = func(value interface{}) {
+		switch node := value.(type) {
+		case map[string]interface{}:
+			if renderer, ok := node["musicResponsiveListItemRenderer"].(map[string]interface{}); ok {
+				if track := extractTrackFromRenderer(renderer); track != nil && track.ID != "" && !seen[track.ID] {
+					seen[track.ID] = true
+					tracks = append(tracks, *track)
+				}
 			}
-
-			track := extractTrackFromRenderer(itemRenderer)
-			if track != nil && track.ID != "" {
-				tracks = append(tracks, *track)
+			for _, child := range node {
+				walk(child)
+			}
+		case []interface{}:
+			for _, child := range node {
+				walk(child)
 			}
 		}
 	}
-
+	walk(root)
 	return tracks, nil
 }
 

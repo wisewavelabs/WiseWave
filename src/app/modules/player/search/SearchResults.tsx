@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { Check, Heart, ListMusic, ListPlus, Play } from "lucide-react";
-import type { CatalogAlbum, CatalogArtist, Track } from "../../../mygo";
-import type { Playlist } from "../library/useLibrary";
+import type { CatalogAlbum, CatalogArtist, CatalogPlaylist, Track } from "../../../mygo";
 import { Artwork } from "../../../shared/ui/Artwork";
 import { Classic } from "../../../shared/ui/Classic";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
@@ -21,7 +20,7 @@ interface SearchResultsProps {
   tracks: Track[];
   albums: CatalogAlbum[];
   artists: CatalogArtist[];
-  playlists: Playlist[];
+  playlists: CatalogPlaylist[];
   liked: Track[];
   current: Track | null;
   onPlay: (track: Track, tracks: Track[]) => void;
@@ -53,29 +52,25 @@ export function SearchResults({
 }: SearchResultsProps) {
   const openSongMenu = useSongMenu();
 
-  const matchingPlaylists = useMemo(() => {
-    const q = query.toLowerCase();
-    return playlists.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.description && p.description.toLowerCase().includes(q))
-    );
-  }, [playlists, query]);
-
   const bestMatch = useMemo(() => {
     if (category !== "All" || !tracks.length) return null;
+    // First hit is usually YouTube Music's top result after deep search parsing.
+    const top = tracks[0];
     const words = query
       .toLowerCase()
       .split(/[^\p{L}\p{N}]+/u)
       .filter(Boolean);
-    if (!words.length) return null;
+    if (!words.length) return top;
+    const text = `${top.title} ${top.artist}`.toLowerCase();
+    const score = words.filter((word) => text.includes(word)).length / words.length;
+    if (score >= 0.5) return top;
     let candidate: { track: Track; score: number } | null = null;
     for (const track of tracks) {
-      const text = `${track.title} ${track.artist}`.toLowerCase();
-      const matches = words.filter((w) => text.includes(w)).length;
-      const score = matches / words.length;
-      if (score >= 0.75 && (!candidate || score > candidate.score)) {
-        candidate = { track, score };
+      const trackText = `${track.title} ${track.artist}`.toLowerCase();
+      const matches = words.filter((word) => trackText.includes(word)).length;
+      const trackScore = matches / words.length;
+      if (trackScore >= 0.75 && (!candidate || trackScore > candidate.score)) {
+        candidate = { track, score: trackScore };
       }
     }
     return candidate?.track ?? null;
@@ -102,9 +97,9 @@ export function SearchResults({
 
   const visiblePlaylists =
     category === "All"
-      ? matchingPlaylists
+      ? playlists
       : category === "Playlists"
-      ? matchingPlaylists
+      ? playlists
       : [];
 
   const visibleArtists =
@@ -352,19 +347,13 @@ export function SearchResults({
                     key={`playlist:${playlist.id}`}
                     role="button"
                     tabIndex={0}
-                    aria-label={`Open playlist ${playlist.name}`}
+                    aria-label={`Open playlist ${playlist.title}`}
                     onClick={() => onPlaylist(playlist.id)}
                     onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onPlaylist(playlist.id); } }}
                   >
                     <div className="search-catalog-artwork playlist-artwork">
-                      {playlist.cover ? (
-                        <img className="playlist-custom-cover" src={playlist.cover} alt="" />
-                      ) : playlist.tracks[0]?.album_art_url ? (
-                        <Artwork
-                          src={playlist.tracks[0].album_art_url}
-                          size={56}
-                          lazy
-                        />
+                      {playlist.artwork_url ? (
+                        <Artwork src={playlist.artwork_url} size={56} lazy />
                       ) : (
                         <div className="search-catalog-placeholder">
                           <ListMusic size={26} />
@@ -373,11 +362,10 @@ export function SearchResults({
                     </div>
                     <div className="search-catalog-details">
                       <span className="search-catalog-title">
-                        <MarqueeText>{playlist.name}</MarqueeText>
+                        <MarqueeText>{playlist.title}</MarqueeText>
                       </span>
                       <span className="search-catalog-subtitle">
-                        Playlist · {playlist.tracks.length}{" "}
-                        {playlist.tracks.length === 1 ? "song" : "songs"}
+                        {[playlist.author, "Playlist"].filter(Boolean).join(" · ")}
                       </span>
                     </div>
                   </div>
