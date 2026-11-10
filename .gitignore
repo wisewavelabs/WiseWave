@@ -1,0 +1,8 @@
+/wisewave.exe
+/src/runtime/media/
+/node_modules/
+/dist/
+/build/
+.mygo/
+AGENTS.md
+AGENTS.MD

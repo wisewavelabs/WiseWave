@@ -1,0 +1,6 @@
+Accompanist Lyrics UI 1.0.19
+Copyright 2025 Simon Scholz
+https://github.com/6xingyv/Accompanist
+
+The lyrics motion, progress-mask, layout, and breathing-dot behavior has been adapted to TypeScript for WiseWave.
+Licensed under the Apache License, Version 2.0. See LICENSE.
