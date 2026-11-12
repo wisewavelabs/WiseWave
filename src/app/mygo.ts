@@ -36,6 +36,10 @@ export interface BrowseResult {
   queuePlaylistId?: string;
 }
 
+export interface CanvasResult {
+  url: string;
+}
+
 export interface CatalogAlbum {
   id: string;
   title: string;
@@ -212,6 +216,9 @@ export const Music = {
   artists(name: string): Promise<CatalogArtist[]> {
     return call("Music.Artists", name);
   },
+  canvas(title: string, artist: string, duration: number, id: string): Promise<CanvasResult | null> {
+    return call("Music.Canvas", title, artist, duration, id);
+  },
   charts(): Promise<BrowseResult | null> {
     return call("Music.Charts");
   },
@@ -299,6 +306,9 @@ export const TrayControl = {
   action(action: string): Promise<void> {
     return call("TrayControl.Action", action);
   },
+  setPlayerFullscreen(enabled: boolean): Promise<void> {
+    return call("TrayControl.SetPlayerFullscreen", enabled);
+  },
   setStartup(enabled: boolean): Promise<void> {
     return call("TrayControl.SetStartup", enabled);
   },
@@ -373,4 +383,5 @@ export const HistoryExport = {
 export const events = {
   mediaAction: event<string>("media-action"),
   trayAction: event<string>("tray-action"),
+  playerFullscreenChanged: event<boolean>("player-fullscreen-changed"),
 } as const;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { paintSeekWave } from "./ProgressStylePreview";
 import { readProgressStyle, type ProgressStyle } from "./progressStyle";
 
@@ -129,8 +129,10 @@ export function PlayerSlider({
       aria-valuetext={tooltip?.(value)}
       className={`player-slider${style ? ` seek-style-${style.toLowerCase()}` : ""} ${disabled && dimWhenDisabled ? "slider-disabled" : ""} ${animateValue && !dragging ? "slider-animate" : ""} ${className}`}
       data-progress-style={style || undefined}
+      data-dragging={dragging || undefined}
       ref={ref}
       role="slider"
+      style={{ "--slider-progress": `${percentage}%` } as CSSProperties}
       tabIndex={disabled ? -1 : 0}
       onKeyDown={(event) => {
         if (disabled || (event.key !== "ArrowRight" && event.key !== "ArrowLeft")) return;

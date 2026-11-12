@@ -460,7 +460,7 @@ export function useMusic() {
     if (autoplay && track) {
       const recommendations = mixTracksRef.current.filter((item) => item.id && hasArtworkURL(item.album_art_url));
       const index = recommendations.findIndex((item) => item.id === track.id);
-      const resume = forYouSequence.current && index < 0 ? upNextRef.current.find((item) => recommendations.some((candidate) => candidate.id === item.id)) : undefined;
+      const resume = forYouSequence.current ? upNextRef.current.find((item) => recommendations.some((candidate) => candidate.id === item.id)) : undefined;
       const nextTrack = resume || (index >= 0 ? recommendations[index + 1] : recommendations[0]);
       if (nextTrack) {
         play(nextTrack, recommendations, { forYou: true });
@@ -511,11 +511,21 @@ export function useMusic() {
       if (version === playbackVersion.current) setError("Could not load the next track.");
     } finally { if (nextPending.current === version) nextPending.current = null; }
   };
-  const shuffle = () => setQueue((current) => {
-    const result = [...current];
+  const shuffle = () => {
+    const queued = queueRef.current.length > 1;
+    const result = [...(queued ? queueRef.current : upNextRef.current.length > 1 ? upNextRef.current : mixTracksRef.current.filter((item) => item.id !== trackRef.current?.id))];
     for (let i = result.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; }
-    return result;
-  });
+    if (queued) {
+      queueRef.current = result;
+      setQueue(result);
+    } else {
+      forYouSequence.current = true;
+      upNextRef.current = result;
+      setUpNext(result);
+      mixTracksRef.current = result;
+      setMixTracks(result);
+    }
+  };
   const toggle = async () => {
     if (!track) return;
     const version = playbackVersion.current;
@@ -674,7 +684,7 @@ export function useMusic() {
     const mixNext = mixTracks.find((item) => item.id && item.id !== track?.id && hasArtworkURL(item.album_art_url));
     const recommendations = mixTracks.filter((item) => item.id && hasArtworkURL(item.album_art_url));
     const index = recommendations.findIndex((item) => item.id === track?.id);
-    const resume = forYouSequence.current && index < 0 ? upNext.find((item) => recommendations.some((candidate) => candidate.id === item.id)) : undefined;
+    const resume = forYouSequence.current ? upNext.find((item) => recommendations.some((candidate) => candidate.id === item.id)) : undefined;
     const recommendation = resume || (index >= 0 ? recommendations[index + 1] : recommendations[0]);
     const nextID = queue[0]?.id || (autoplay ? recommendation?.id : upNext[0]?.id) || (autoplay ? mixNext?.id : undefined);
     void Playback.prefetch(playing && !trackLoading ? nextID || "" : "").catch(() => setError("Could not prepare the next track."));
