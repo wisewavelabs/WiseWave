@@ -19,6 +19,7 @@ import (
 const maxAACSourceBytes = 128 << 20
 
 type aacDecoder struct {
+	eq       eqProcessor
 	decoder  *pcm.Decoder
 	rate     int
 	channels int
@@ -124,11 +125,13 @@ func (d *aacDecoder) Read(samples []float32) (int, error) {
 	for i := 0; i < n/2; i++ {
 		samples[i] = float32(int16(binary.LittleEndian.Uint16(d.pcmBuf[i*2:]))) / 32768
 	}
+	d.eq.apply(samples[:n/2], d.rate, d.channels)
 	d.frame += int64(n / (d.channels * 2))
 	return n / 2, err
 }
 
 func (d *aacDecoder) SetPosition(frame int64) error {
+	d.eq.current = nil
 	frame = max(0, frame)
 	if d.mp4 != nil {
 		sample, skip, err := d.mp4.SeekTime(time.Duration(frame) * time.Second / time.Duration(d.rate))

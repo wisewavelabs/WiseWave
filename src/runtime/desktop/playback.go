@@ -38,10 +38,9 @@ type Playback struct {
 	codec           string
 	duration        time.Duration
 	loudness        float64
-	equalizer       atomic.Int32
+	equalizer       atomic.Pointer[eqSettings]
 	maxBitrate      atomic.Int32
 	normalize       bool
-	segments        []innertube.SponsorSegment
 }
 
 type PlaybackState struct {
@@ -65,7 +64,7 @@ func NewPlayback(music *Music) *Playback {
 	if err != nil {
 		log.Printf("audio cache unavailable: %v", err)
 	}
-	p := &Playback{music: music, audioCache: cache, volume: 1.0, normalize: true}
+	p := &Playback{music: music, audioCache: cache, volume: 1.0, normalize: false}
 	p.maxBitrate.Store(256000)
 	return p
 }
@@ -106,7 +105,6 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	p.codec = ""
 	p.duration = 0
 	p.loudness = 0
-	p.segments = nil
 	p.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -124,20 +122,6 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	}
 	p.cancel = cancel
 	p.mu.Unlock()
-
-	if videoID.MatchString(id) {
-		go func() {
-			segCtx, segCancel := context.WithTimeout(context.Background(), 4*time.Second)
-			defer segCancel()
-			if segs, err := innertube.DefaultSponsorBlock.GetSegments(segCtx, id); err == nil {
-				p.mu.Lock()
-				if p.version == version {
-					p.segments = segs
-				}
-				p.mu.Unlock()
-			}
-		}()
-	}
 
 	var sb *streamBuffer
 	var decoder audio.Decoder
@@ -277,7 +261,9 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	}
 
 	if opus, ok := decoder.(*opusDecoder); ok {
-		opus.equalizer = &p.equalizer
+		opus.eq.source = &p.equalizer
+	} else if aac, ok := decoder.(*aacDecoder); ok {
+		aac.eq.source = &p.equalizer
 	}
 	player := audio.NewPlayer(decoder)
 	targetGain := innertube.CalculateLoudnessGain(p.loudness, p.normalize)
@@ -413,12 +399,26 @@ func (p *Playback) SetStreamingQuality(quality string) error {
 }
 
 func (p *Playback) SetEqualizer(preset string) error {
-	presets := map[string]int32{"Flat": 0, "Bass boost": 1, "Vocal": 2, "Treble boost": 3, "Acoustic": 4}
+	presets := map[string][]float64{"Flat": {0, 0, 0, 0, 0, 0}, "Bass boost": {4, 3, 1, 0, 0, 0}, "Vocal": {-1, -1, 0, 2, 3, 1}, "Treble boost": {0, 0, 0, 0, 2, 4}, "Acoustic": {2, 1, 0, 0, 1, 2}}
 	value, ok := presets[preset]
 	if !ok {
 		return errors.New("Invalid equalizer preset")
 	}
-	p.equalizer.Store(value)
+	return p.SetEqualizerBands(true, value)
+}
+
+func (p *Playback) SetEqualizerBands(enabled bool, gains []float64) error {
+	if len(gains) != 6 {
+		return errors.New("Equalizer requires six bands")
+	}
+	config := &eqSettings{enabled: enabled}
+	for i, gain := range gains {
+		if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < -12 || gain > 12 {
+			return errors.New("Invalid equalizer gain")
+		}
+		config.gains[i] = gain
+	}
+	p.equalizer.Store(config)
 	return nil
 }
 
@@ -559,18 +559,6 @@ func (p *Playback) State() PlaybackState {
 		channels = p.decoder.Channels()
 	}
 	pos := p.player.Position().Seconds()
-	if p.player.Playing() && len(p.segments) > 0 {
-		for _, seg := range p.segments {
-			if seg.ActionType == "skip" || seg.ActionType == "" {
-				if pos >= seg.Start() && pos < seg.End()-0.5 {
-					p.player.Seek(time.Duration(seg.End() * float64(time.Second)))
-					pos = seg.End()
-					break
-				}
-			}
-		}
-	}
-
 	bufferAhead := 0.0
 	duration := 0.0
 	if p.streamBuf != nil {
@@ -721,9 +709,7 @@ type opusDecoder struct {
 	indexedBytes int
 	frame        int64
 	eof          bool
-	equalizer    *atomic.Int32
-	eqPreset     int32
-	eqFilters    []eqFilter
+	eq           eqProcessor
 }
 
 func newOpus(sb *streamBuffer) (*opusDecoder, error) {
@@ -743,7 +729,7 @@ func (d *opusDecoder) Read(samples []float32) (int, error) {
 			return 0, io.EOF
 		}
 		n, err := d.decoder.Read(samples)
-		d.applyEqualizer(samples[:n])
+		d.eq.apply(samples[:n], d.rate, d.channels)
 		d.frame += int64(n / d.Channels())
 		if !errors.Is(err, io.EOF) || d.source == nil {
 			return n, err
@@ -853,7 +839,7 @@ func (d *opusDecoder) SetPosition(frame int64) error {
 		}
 	}
 	d.decoder, d.frame, d.eof = decoder, frame, false
-	d.eqPreset = -1
+	d.eq.current = nil
 	return nil
 }
 
