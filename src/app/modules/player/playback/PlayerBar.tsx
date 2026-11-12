@@ -5,12 +5,14 @@ import { ListCollapseIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIc
 import { IconButton } from "../../../shared/ui/IconButton";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Artwork, hasArtworkURL } from "../../../shared/ui/Artwork";
+import { PlayingSpectrum } from "../../../shared/ui/PlayingSpectrum";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import type { Track } from "../../../mygo";
 import { ArtistLinks } from "../shared/ArtistLinks";
 import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 import type { useMusic } from "./useMusic";
+import { progressStyleFromSettings, readProgressStyle, type ProgressStyle } from "./progressStyle";
 
 function time(value: number) {
   const seconds = Math.max(0, Math.floor(value));
@@ -48,10 +50,28 @@ export function PlayerBar({
   const [seekPreview, setSeekPreview] = useState<{ id: string; value: number } | null>(null);
   const [volumePreview, setVolumePreview] = useState<number | null>(null);
   const [mixOpen, setMixOpen] = useState(false);
+  const [progressStyle, setProgressStyle] = useState<ProgressStyle>(() => progressStyleFromSettings());
   const queueRef = useRef<HTMLDivElement>(null);
   const mixRef = useRef<HTMLDivElement>(null);
   const queueButtonRef = useRef<HTMLButtonElement>(null);
   const previousQueueSizeRef = useRef(music.queue.length);
+
+  useEffect(() => {
+    const sync = (event?: Event) => {
+      const detail = event && "detail" in event ? (event as CustomEvent).detail : null;
+      if (detail && typeof detail === "object" && "progressStyle" in detail) {
+        setProgressStyle(readProgressStyle(String((detail as { progressStyle?: string }).progressStyle)));
+        return;
+      }
+      setProgressStyle(progressStyleFromSettings());
+    };
+    window.addEventListener("wisewave-settings-changed", sync);
+    window.addEventListener("wisewave-settings-updated", sync);
+    return () => {
+      window.removeEventListener("wisewave-settings-changed", sync);
+      window.removeEventListener("wisewave-settings-updated", sync);
+    };
+  }, []);
 
   useEffect(() => {
     const previousQueueSize = previousQueueSizeRef.current;
@@ -143,6 +163,7 @@ export function PlayerBar({
   const VolumeIcon = music.muted || volume === 0 ? VolumeX : volume < 50 ? Volume1 : Volume2;
   const volumeLabel = music.muted || volume === 0 ? "Unmute" : "Mute";
   const repeatLabel = music.repeatMode === "track" ? "Repeat one" : music.repeatMode === "queue" ? "Repeat all" : "Repeat off";
+  const repeatPressed = music.repeatMode !== "off";
 
   return (
     <footer className={`player-bar ${lyricsOpen && music.track ? "player-bar-lyrics" : ""}`}>
@@ -200,6 +221,7 @@ export function PlayerBar({
                       - {validMixTracks.length} {validMixTracks.length === 1 ? "song" : "songs"}
                     </span>
                   </strong>
+                  <span className="mix-preserve">Keep mix <button type="button" className="settings-tog" role="switch" aria-label="Keep For You mix" aria-checked={music.preserveForYou} onClick={music.togglePreserveForYou} /></span>
                 </div>
                 <div className="mix-popover-list player-scroll">
                   {validMixTracks.length > 0 ? (
@@ -213,12 +235,12 @@ export function PlayerBar({
                         onKeyDown={(event) => {
                           if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
                             event.preventDefault();
-                            music.play(item, validMixTracks);
+                            music.play(item, validMixTracks, { forYou: true });
                             setMixOpen(false);
                           }
                         }}
                         onClick={() => {
-                          music.play(item, validMixTracks);
+                          music.play(item, validMixTracks, { forYou: true });
                           setMixOpen(false);
                         }}
                       >
@@ -257,8 +279,8 @@ export function PlayerBar({
           </IconButton>
           <IconButton
             label="Previous"
-            disabled={!controllable || music.trackLoading || music.history.length < 2}
-            onClick={() => music.play(music.history[1])}
+            disabled={!controllable || music.trackLoading || !music.track}
+            onClick={music.previous}
           >
             <PreviousIcon className="control-icon" />
           </IconButton>
@@ -275,14 +297,14 @@ export function PlayerBar({
           </Tooltip>
           <IconButton
             label="Next"
-            disabled={!controllable || music.trackLoading}
+            disabled={!controllable || music.trackLoading || !music.track || !(music.queue.length || music.upNext.length || music.repeatMode === "queue" || music.autoplay)}
             onClick={music.next}
           >
             <NextIcon className="control-icon" />
           </IconButton>
           <IconButton
             label={repeatLabel}
-            active={music.repeatMode !== "off"}
+            active={repeatPressed}
             disabled={!controllable || music.trackLoading}
             onClick={music.cycleRepeat}
           >
@@ -334,6 +356,8 @@ export function PlayerBar({
               disabled={!controllable || music.trackLoading}
               label="Seek"
               max={music.duration || 1}
+              playing={music.playing}
+              progressStyle={progressStyle}
               value={Math.min(position, music.duration || 1)}
               onChange={(value) => {
                 if (music.track) setSeekPreview({ id: music.track.id, value });
@@ -417,6 +441,7 @@ export function PlayerBar({
                     >
                       <span className="queue-popover-art-wrap">
                         <Artwork className="queue-popover-art" src={item.album_art_url} size={48} lazy />
+                        <PlayingSpectrum active={music.track?.id === item.id} playing={music.playing} size={28} />
                         <span aria-hidden="true" className="queue-popover-play-overlay">
                           <Play size={16} fill="#ffffff" />
                         </span>
