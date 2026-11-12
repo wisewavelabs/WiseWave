@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { History, Search, X } from "lucide-react";
-import { Music, type CatalogArtist, type Track } from "../../../mygo";
+import { History, Play, Search, X } from "lucide-react";
+import { Music, type CatalogAlbum, type CatalogArtist, type CatalogPlaylist, type Track } from "../../../mygo";
 import { Classic } from "../../../shared/ui/Classic";
 import { Artwork } from "../../../shared/ui/Artwork";
 import { useSongMenu } from "../shared/SongMenu";
+import { ArtistLinks } from "../shared/ArtistLinks";
+import { PlayerAlert } from "../shared/PlayerAlert";
 import { loadSearchSuggest, peekSearchSuggest } from "./searchCache";
 
 const storageKey = "wisewave-search-history";
@@ -40,6 +42,8 @@ export function SearchBox({
   onCommit,
   onSelect,
   onArtist,
+  onAlbum,
+  onPlaylist,
 }: {
   query: string;
   onChange: (query: string) => void;
@@ -49,6 +53,8 @@ export function SearchBox({
   error?: string;
   onSelect: (track: Track, tracks: Track[]) => void;
   onArtist?: (artist: { artist: string; artist_id?: string }) => void;
+  onAlbum?: (id: string) => void;
+  onPlaylist?: (id: string) => void;
 }) {
   const openSongMenu = useSongMenu();
   const [history, setHistory] = useState(loadHistory);
@@ -56,6 +62,8 @@ export function SearchBox({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [preview, setPreview] = useState<Track[]>([]);
   const [artists, setArtists] = useState<CatalogArtist[]>([]);
+  const [albums, setAlbums] = useState<CatalogAlbum[]>([]);
+  const [playlists, setPlaylists] = useState<CatalogPlaylist[]>([]);
   const [searching, setSearching] = useState(false);
   const [failed, setFailed] = useState(false);
   const [tracksFailed, setTracksFailed] = useState(false);
@@ -97,11 +105,18 @@ export function SearchBox({
         setSelected(-1);
       }
     };
+    const blur = () => {
+      setOpen(false);
+      setSelected(-1);
+      if (document.activeElement === input.current) input.current?.blur();
+    };
     window.addEventListener("pointerdown", close, true);
     window.addEventListener("keydown", escape);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("pointerdown", close, true);
       window.removeEventListener("keydown", escape);
+      window.removeEventListener("blur", blur);
     };
   }, []);
 
@@ -111,6 +126,8 @@ export function SearchBox({
       setSuggestions([]);
       setPreview([]);
       setArtists([]);
+      setAlbums([]);
+      setPlaylists([]);
       setSearching(false);
       setFailed(false);
       setTracksFailed(false);
@@ -123,6 +140,8 @@ export function SearchBox({
       setSuggestions(cached.suggestions);
       setPreview(cached.preview);
       setArtists(cached.artists);
+      setAlbums(cached.albums);
+      setPlaylists(cached.playlists);
       setFailed(cached.failed);
       setTracksFailed(cached.tracksFailed);
       setSearching(false);
@@ -131,6 +150,8 @@ export function SearchBox({
       setSuggestions([]);
       setPreview([]);
       setArtists([]);
+      setAlbums([]);
+      setPlaylists([]);
       setSearching(true);
       setFailed(false);
       setTracksFailed(false);
@@ -157,6 +178,8 @@ export function SearchBox({
         setSuggestions(entry.suggestions);
         setPreview(entry.preview);
         setArtists(entry.artists);
+        setAlbums(entry.albums);
+        setPlaylists(entry.playlists);
         setFailed(entry.failed);
         setTracksFailed(entry.tracksFailed);
         setSelected(-1);
@@ -178,10 +201,12 @@ export function SearchBox({
   const showPanel = open && (showSuggestions || history.length > 0);
 
   const suggestionItems = suggestions;
-  const previewItems = preview.slice(0, Math.ceil(preview.length / 2));
+  const previewItems = preview.slice(0, 15);
   const artistItems = artists;
+  const playlistItems = playlists;
+  const albumItems = albums;
 
-  const count = showHistory ? history.length : suggestionItems.length + artistItems.length + previewItems.length;
+  const count = showHistory ? history.length : suggestionItems.length + previewItems.length + artistItems.length + playlistItems.length + albumItems.length;
   const activeIndex = selected >= 0 && selected < count ? selected : -1;
 
   useEffect(() => {
@@ -225,14 +250,22 @@ export function SearchBox({
             commitQuery(history[activeIndex]);
           } else if (showSuggestions && activeIndex >= 0 && activeIndex < suggestionItems.length) {
             commitQuery(suggestionItems[activeIndex]);
-          } else if (showSuggestions && activeIndex >= suggestionItems.length && activeIndex < suggestionItems.length + artistItems.length) {
-            const artist = artistItems[activeIndex - suggestionItems.length];
+          } else if (showSuggestions && activeIndex >= suggestionItems.length && activeIndex < suggestionItems.length + previewItems.length) {
+            save(draft);
+            onSelect(previewItems[activeIndex - suggestionItems.length], preview);
+            setOpen(false);
+            setSelected(-1);
+          } else if (showSuggestions && activeIndex >= suggestionItems.length + previewItems.length && activeIndex < suggestionItems.length + previewItems.length + artistItems.length) {
+            const artist = artistItems[activeIndex - suggestionItems.length - previewItems.length];
             if (artist) onArtist?.({ artist: artist.name, artist_id: artist.id });
             setOpen(false);
             setSelected(-1);
-          } else if (showSuggestions && activeIndex >= suggestionItems.length + artistItems.length && previewItems[activeIndex - suggestionItems.length - artistItems.length]) {
-            save(draft);
-            onSelect(previewItems[activeIndex - suggestionItems.length - artistItems.length], preview);
+          } else if (showSuggestions && activeIndex >= suggestionItems.length + previewItems.length + artistItems.length && activeIndex < suggestionItems.length + previewItems.length + artistItems.length + playlistItems.length) {
+            onPlaylist?.(playlistItems[activeIndex - suggestionItems.length - previewItems.length - artistItems.length].id);
+            setOpen(false);
+            setSelected(-1);
+          } else if (showSuggestions && activeIndex >= 0 && albumItems[activeIndex - suggestionItems.length - previewItems.length - artistItems.length - playlistItems.length]) {
+            onAlbum?.(albumItems[activeIndex - suggestionItems.length - previewItems.length - artistItems.length - playlistItems.length].id);
             setOpen(false);
             setSelected(-1);
           } else if (draft.trim()) {
@@ -253,10 +286,11 @@ export function SearchBox({
           autoComplete="off"
           placeholder="Search songs, artists, albums"
           value={draft}
-          onFocus={() => setOpen(true)}
+          onFocus={(event) => { if (event.relatedTarget) setOpen(true); }}
           onChange={(event) => {
             setSelected(-1);
             setOpen(true);
+            setSearching(Boolean(event.target.value.trim()));
             setDraft(event.target.value);
           }}
           onKeyDown={(event) => {
@@ -365,6 +399,11 @@ export function SearchBox({
               </div>
             ) : (
               <div className="search-dropdown-section">
+                {searching && !suggestionItems.length && !artistItems.length && !preview.length && !playlists.length && !albums.length && (
+                  <div className="search-skeleton" role="status" aria-label="Searching">
+                    {[68, 55, 72, 48, 62].map((width) => <div key={width}><span /><span><i style={{ width: `${width}%` }} /><i style={{ width: `${Math.round(width * 0.6)}%` }} /></span></div>)}
+                  </div>
+                )}
                 {suggestionItems.length > 0 && <div className="search-dropdown-header">Suggestions</div>}
                 {suggestionItems.map((item, index) => (
                   <div
@@ -389,27 +428,9 @@ export function SearchBox({
                     </button>
                   </div>
                 ))}
-                {artistItems.length > 0 && <div className="search-dropdown-header">Artists</div>}
-                {artistItems.map((artist, index) => {
-                  const optionIndex = suggestionItems.length + index;
-                  return <div
-                    className={`search-result search-artist ${activeIndex === optionIndex ? "selected" : ""}`}
-                    key={artist.id}
-                    id={`search-option-${optionIndex}`}
-                    data-search-index={optionIndex}
-                    role="option"
-                    aria-selected={activeIndex === optionIndex}
-                    onPointerMove={() => setSelected(optionIndex)}
-                  >
-                    <button type="button" className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { onArtist?.({ artist: artist.name, artist_id: artist.id }); setOpen(false); setSelected(-1); }}>
-                      <span className="search-artist-cover"><Artwork src={artist.artwork_url} size={48} placeholder="user" allowNonSquare /></span>
-                      <span className="search-result-info"><strong>{artist.name}</strong><small>Artist</small></span>
-                    </button>
-                  </div>;
-                })}
                 {previewItems.length > 0 && <div className="search-dropdown-header">Tracks</div>}
                 {previewItems.map((track, index) => {
-                  const optionIndex = suggestionItems.length + artistItems.length + index;
+                  const optionIndex = suggestionItems.length + index;
                   return (
                     <div
                       className={`search-result ${activeIndex === optionIndex ? "selected" : ""}`}
@@ -420,19 +441,47 @@ export function SearchBox({
                       aria-selected={activeIndex === optionIndex}
                       onPointerMove={() => setSelected(optionIndex)}
                     >
-                      <button type="button" className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { save(draft); onSelect(track, preview); setOpen(false); setSelected(-1); }}>
-                        <span className="search-result-cover"><Artwork src={track.album_art_url} size={48} /></span>
+                      <div role="button" tabIndex={0} aria-label={`Play ${track.title}`} className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { save(draft); onSelect(track, preview); setOpen(false); setSelected(-1); }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); save(draft); onSelect(track, preview); setOpen(false); setSelected(-1); } }}>
+                        <span className="search-result-cover"><Artwork src={track.album_art_url} size={48} /><span className="quick-pick-play-overlay" aria-hidden="true"><Play size={16} fill="currentColor" /></span></span>
                         <span className="search-result-info">
                           <strong className="song-menu-title" onContextMenu={(event) => openSongMenu(event, track)}>{track.title}</strong>
-                          <small>{track.artist}</small>
+                          <span className="search-result-artist"><ArtistLinks track={track} onOpen={(artist) => { onArtist?.({ artist: artist.artist, artist_id: artist.artist_id }); setOpen(false); setSelected(-1); }} /></span>
                         </span>
-                      </button>
+                      </div>
                     </div>
                   );
                 })}
-                {tracksFailed && suggestionItems.length > 0 && <p className="search-dropdown-message" role="status">Tracks couldn’t be loaded.</p>}
-                {!searching && !suggestionItems.length && !artistItems.length && !preview.length && (
-                  <p className="search-dropdown-message">{failed ? "Search is unavailable. Try again." : "No results found"}</p>
+                {artistItems.length > 0 && <div className="search-dropdown-header">Artists</div>}
+                {artistItems.map((artist, index) => {
+                  const optionIndex = suggestionItems.length + previewItems.length + index;
+                  return <div className={`search-result search-artist ${activeIndex === optionIndex ? "selected" : ""}`} key={artist.id} id={`search-option-${optionIndex}`} data-search-index={optionIndex} role="option" aria-selected={activeIndex === optionIndex} onPointerMove={() => setSelected(optionIndex)}>
+                    <button type="button" className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { onArtist?.({ artist: artist.name, artist_id: artist.id }); setOpen(false); setSelected(-1); }}>
+                      <span className="search-artist-cover"><Artwork src={artist.artwork_url} size={48} placeholder="user" allowNonSquare /></span>
+                      <span className="search-result-info"><strong>{artist.name}</strong><small>Artist</small></span>
+                    </button>
+                  </div>;
+                })}
+                {playlistItems.length > 0 && <div className="search-dropdown-header">Playlists</div>}
+                {playlistItems.map((item, index) => {
+                  const optionIndex = suggestionItems.length + previewItems.length + artistItems.length + index;
+                  return <div className={`search-result ${activeIndex === optionIndex ? "selected" : ""}`} key={item.id} id={`search-option-${optionIndex}`} data-search-index={optionIndex} role="option" aria-selected={activeIndex === optionIndex} onPointerMove={() => setSelected(optionIndex)}>
+                    <button type="button" className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { onPlaylist?.(item.id); setOpen(false); setSelected(-1); }}>
+                      <span className="search-result-cover"><Artwork src={item.artwork_url} size={48} /></span><span className="search-result-info"><strong>{item.title}</strong><small>{item.author || "Playlist"}</small></span>
+                    </button>
+                  </div>;
+                })}
+                {albumItems.length > 0 && <div className="search-dropdown-header">Albums</div>}
+                {albumItems.map((item, index) => {
+                  const optionIndex = suggestionItems.length + previewItems.length + artistItems.length + playlistItems.length + index;
+                  return <div className={`search-result ${activeIndex === optionIndex ? "selected" : ""}`} key={item.id} id={`search-option-${optionIndex}`} data-search-index={optionIndex} role="option" aria-selected={activeIndex === optionIndex} onPointerMove={() => setSelected(optionIndex)}>
+                    <button type="button" className="search-result-select" onPointerDown={(event) => event.preventDefault()} onClick={() => { onAlbum?.(item.id); setOpen(false); setSelected(-1); }}>
+                      <span className="search-result-cover"><Artwork src={item.artwork_url} size={48} /></span><span className="search-result-info"><strong>{item.title}</strong><small>{item.artist || "Album"}</small></span>
+                    </button>
+                  </div>;
+                })}
+                <PlayerAlert message={tracksFailed && suggestionItems.length > 0 ? "Tracks couldn’t be loaded." : !searching && failed && !suggestionItems.length && !artistItems.length && !preview.length && !playlists.length && !albums.length ? "Search is unavailable. Try again." : ""} onDismiss={() => {}} />
+                {!searching && !suggestionItems.length && !artistItems.length && !preview.length && !playlists.length && !albums.length && (
+                  !failed && <p className="search-dropdown-message">No results found</p>
                 )}
               </div>
             )}

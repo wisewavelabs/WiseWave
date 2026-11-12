@@ -2,11 +2,13 @@ import { useMemo } from "react";
 import { Check, Heart, ListMusic, ListPlus, Play } from "lucide-react";
 import type { CatalogAlbum, CatalogArtist, CatalogPlaylist, Track } from "../../../mygo";
 import { Artwork } from "../../../shared/ui/Artwork";
+import { PlayingSpectrum } from "../../../shared/ui/PlayingSpectrum";
 import { Classic } from "../../../shared/ui/Classic";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { ArtistLinks } from "../shared/ArtistLinks";
 import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
+import { PlayerAlert } from "../shared/PlayerAlert";
 
 const CATEGORIES = ["All", "Tracks", "Albums", "Playlists", "Artists"] as const;
 export type SearchCategory = (typeof CATEGORIES)[number];
@@ -23,6 +25,7 @@ interface SearchResultsProps {
   playlists: CatalogPlaylist[];
   liked: Track[];
   current: Track | null;
+  playing?: boolean;
   onPlay: (track: Track, tracks: Track[]) => void;
   onLike: (track: Track) => void;
   onQueue: (track: Track) => void;
@@ -43,6 +46,7 @@ export function SearchResults({
   playlists,
   liked,
   current,
+  playing = false,
   onPlay,
   onLike,
   onQueue,
@@ -54,7 +58,6 @@ export function SearchResults({
 
   const bestMatch = useMemo(() => {
     if (category !== "All" || !tracks.length) return null;
-    // First hit is usually YouTube Music's top result after deep search parsing.
     const top = tracks[0];
     const words = query
       .toLowerCase()
@@ -140,19 +143,14 @@ export function SearchResults({
         })}
       </div>
 
-      {error && !isEmpty && <p className="search-results-notice" role="status">{error}</p>}
+      <PlayerAlert message={error || ""} onDismiss={() => {}} />
 
       {loading && !tracks.length && !albums.length && !artists.length ? (
         <div className="search-results-loading" role="status">
           <Classic />
           <span>Searching…</span>
         </div>
-      ) : error && isEmpty ? (
-        <div className="search-results-empty" role="alert">
-          <h3>Couldn’t load results</h3>
-          <p>{error}</p>
-        </div>
-      ) : isEmpty ? (
+      ) : error && isEmpty ? null : isEmpty ? (
         <div className="search-results-empty">
           <h3>No matches</h3>
           <p>Try a different track, artist, album or playlist.</p>
@@ -168,6 +166,7 @@ export function SearchResults({
                   onClick={() => onPlay(bestMatch, tracks)}
                 >
                   <Artwork src={bestMatch.album_art_url} size={80} />
+                  <PlayingSpectrum active={current?.id === bestMatch.id} playing={playing} size={32} placement="corner" />
                   <span className="search-best-match-play">
                     <Play size={24} fill="currentColor" />
                   </span>
@@ -247,6 +246,7 @@ export function SearchResults({
                     >
                       <div className="search-track-artwork">
                         <Artwork src={track.album_art_url} size={48} lazy />
+                        <PlayingSpectrum active={current?.id === track.id} playing={playing} size={28} />
                         <span className="search-track-play-icon">
                           <Play size={18} fill="currentColor" />
                         </span>
@@ -270,35 +270,6 @@ export function SearchResults({
                       <span className="search-track-duration">
                         {trackDurationLabel(track)}
                       </span>
-                    </div>
-                    <div className="search-track-actions">
-                      <button
-                        type="button"
-                        className="search-row-action"
-                        aria-label={`${
-                          liked.some((item) => item.id === track.id)
-                            ? "Unlike"
-                            : "Like"
-                        } ${track.title}`}
-                        onClick={() => onLike(track)}
-                      >
-                        <Heart
-                          size={16}
-                          fill={
-                            liked.some((item) => item.id === track.id)
-                              ? "currentColor"
-                              : "none"
-                          }
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        className="search-row-action"
-                        aria-label={`Add ${track.title} to queue`}
-                        onClick={() => onQueue(track)}
-                      >
-                        <ListPlus size={18} />
-                      </button>
                     </div>
                   </div>
                 ))}

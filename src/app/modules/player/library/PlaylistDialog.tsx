@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ImagePlus, Pencil, X } from "lucide-react";
+import { PlayerAlert } from "../shared/PlayerAlert";
 
 const NAME_LIMIT = 100;
 const DESCRIPTION_LIMIT = 300;
@@ -112,7 +113,7 @@ export function PlaylistDialog({ onClose, onCreate, playlist }: { onClose: () =>
         </div>
       </div>
 
-      {imageError && <p className="playlist-image-error" role="alert">{imageError}</p>}
+      <PlayerAlert message={imageError} onDismiss={() => setImageError("")} />
 
       <footer>
         <button type="button" onClick={() => dismiss(onClose)}>Cancel</button>

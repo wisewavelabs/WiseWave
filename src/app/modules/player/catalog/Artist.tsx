@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, Play, Radio, Shuffle } from "lucide-react";
 import { Music, type ArtistDetail, type Track } from "../../../mygo";
 import { Artwork } from "../../../shared/ui/Artwork";
+import { PlayingSpectrum } from "../../../shared/ui/PlayingSpectrum";
 import { Classic } from "../../../shared/ui/Classic";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { ArtistLinks } from "../shared/ArtistLinks";
+import { PlayerAlert } from "../shared/PlayerAlert";
 import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 
@@ -41,18 +43,21 @@ export function loadArtist(id: string, name: string): Promise<ArtistDetail> {
   return request;
 }
 
-export function Artist({ id, name, onBack, onPlay, onArtist, onAlbum }: {
+export function Artist({ id, name, onBack, onPlay, onArtist, onAlbum, current = null, playing = false }: {
   id: string; name: string; onBack: () => void;
   onPlay: (track: Track, tracks: Track[]) => void;
   onArtist: (track: Track) => void; onAlbum: (id: string) => void;
+  current?: Track | null; playing?: boolean;
 }) {
   const openSongMenu = useSongMenu();
   const [artist, setArtist] = useState<ArtistDetail | null>(() => cachedArtist(artistKey(id, name)));
   const [loading, setLoading] = useState(() => !cachedArtist(artistKey(id, name)));
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [descriptionOverflowing, setDescriptionOverflowing] = useState(false);
   const [descriptionTop, setDescriptionTop] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
+  const biographyRef = useRef<HTMLParagraphElement>(null);
   const [showAll, setShowAll] = useState(false);
   const [retry, setRetry] = useState(0);
   const [bannerFailed, setBannerFailed] = useState(false);
@@ -64,13 +69,31 @@ export function Artist({ id, name, onBack, onPlay, onArtist, onAlbum }: {
   useEffect(() => {
     let active = true;
     const cached = cachedArtist(artistKey(id, name));
-    setLoading(!cached); setError(""); setArtist(cached); setExpanded(false);
+    setLoading(!cached); setError(""); setArtist(cached); setExpanded(false); setDescriptionOverflowing(false);
     setShowAll(false); setBannerFailed(false); setBannerLoaded(false); setMixLoading(false); setMixError("");
     void loadArtist(id, name).then((result) => { if (active) setArtist(result); }).catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : "Artist is unavailable.");
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; mixRequest.current++; };
   }, [id, name, retry]);
+
+  useLayoutEffect(() => {
+    const element = biographyRef.current;
+    if (!element) {
+      setDescriptionOverflowing(false);
+      return;
+    }
+    if (expanded) return;
+    const measure = () => setDescriptionOverflowing(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    const frame = window.requestAnimationFrame(measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [artist?.description, expanded, loading]);
 
   const tracks = artist?.tracks || [];
   const visible = showAll ? tracks : tracks.slice(0, 20);
@@ -99,7 +122,7 @@ export function Artist({ id, name, onBack, onPlay, onArtist, onAlbum }: {
 
   if (loading || error || !artist) return <div className="artist-page artist-page-status">
     {backButton}
-    {loading ? <p className="feed-message loading-state" role="status"><Classic />Loading artist…</p> : <div role="alert"><p className="feed-message">{error}</p><button className="artist-secondary" type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>}
+    {loading ? <p className="feed-message loading-state" role="status"><Classic />Loading artist…</p> : <><PlayerAlert message={error} onDismiss={() => {}} action={{ label: "Retry", onClick: () => setRetry((value) => value + 1) }} /><button className="artist-secondary" type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button></>}
   </div>;
 
   return <div className="artist-page">
@@ -109,12 +132,12 @@ export function Artist({ id, name, onBack, onPlay, onArtist, onAlbum }: {
       {backButton}
       <div className="artist-hero-content" ref={contentRef}>
         <h1>{artist.name}</h1>
-        {artist.description && <div className="artist-biography"><p className={expanded ? "expanded" : ""}>{artist.description}</p><button type="button" aria-expanded={expanded} onClick={() => { if (!expanded && contentRef.current) setDescriptionTop(contentRef.current.offsetTop); setExpanded(!expanded); }}>{expanded ? "Less" : "More"}</button></div>}
+        {artist.description && <div className="artist-biography"><p ref={biographyRef} className={expanded ? "expanded" : ""}>{artist.description}</p>{descriptionOverflowing && <button type="button" aria-expanded={expanded} onClick={() => { if (!expanded && contentRef.current) setDescriptionTop(contentRef.current.offsetTop); setExpanded(!expanded); }}>{expanded ? "Less" : "More"}</button>}</div>}
         <div className="artist-hero-actions">
           <button type="button" disabled={!tracks.length} onClick={shuffle}><Shuffle size={21} />Shuffle</button>
           <button type="button" disabled={!tracks.length || mixLoading} aria-busy={mixLoading} onClick={() => { void startMix(); }}>{mixLoading ? <Classic /> : <Radio size={21} />}Mix</button>
         </div>
-        {mixError && <p className="artist-mix-error" role="alert">{mixError}</p>}
+        <PlayerAlert message={mixError} onDismiss={() => setMixError("")} />
       </div>
     </header>
     <div className="artist-catalog">
@@ -122,7 +145,7 @@ export function Artist({ id, name, onBack, onPlay, onArtist, onAlbum }: {
         <div className="artist-section-heading"><h2 id="catalog-songs">Top songs</h2><span>{tracks.length} songs</span></div>
         {tracks.length ? <div className="artist-top-list">{visible.map((track, index) => <div className="catalog-song" key={track.id} onClick={(event) => { if (event.target instanceof Element && event.target.closest("button, .artist-links")) return; play(track, tracks); }}>
           <span className="catalog-song-number">{index + 1}</span>
-          <button className="catalog-song-cover" type="button" aria-label={`Play ${track.title}`} onClick={() => play(track, tracks)}><Artwork src={track.album_art_url} size={48} lazy /><span><Play size={16} fill="currentColor" /></span></button>
+          <button className="catalog-song-cover" type="button" aria-label={`Play ${track.title}`} onClick={() => play(track, tracks)}><Artwork src={track.album_art_url} size={48} lazy /><PlayingSpectrum active={current?.id === track.id} playing={playing} size={28} /><span><Play size={16} fill="currentColor" /></span></button>
           <div className="catalog-song-info"><button className="song-menu-title" type="button" onContextMenu={(event) => openSongMenu(event, track)} onClick={() => play(track, tracks)}><MarqueeText>{track.title}</MarqueeText></button><MarqueeText><ArtistLinks track={track} onOpen={onArtist} /></MarqueeText></div>
           <span className="catalog-song-duration">{trackDurationLabel(track)}</span>
         </div>)}</div> : <p className="feed-message">No songs available for this artist.</p>}

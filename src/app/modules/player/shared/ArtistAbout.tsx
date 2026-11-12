@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ArtistDetail, Track } from "../../../mygo";
 import { loadArtist } from "../catalog/Artist";
 import { artistNames } from "./ArtistLinks";
+import { PlayerAlert } from "./PlayerAlert";
 
 export function ArtistAbout({ track, onArtist }: { track: Track; onArtist: (track: Track) => void }) {
   const name = artistNames(track.artist)[0] || track.artist;
@@ -35,13 +36,26 @@ export function ArtistAbout({ track, onArtist }: { track: Track; onArtist: (trac
 
   useLayoutEffect(() => {
     const element = descriptionRef.current;
-    if (!element || expanded) return;
+    if (!element) {
+      setOverflowing(false);
+      return;
+    }
+    if (expanded) return;
     const measure = () => setOverflowing(element.scrollHeight > element.clientHeight + 1);
     measure();
+    const frame = window.requestAnimationFrame(measure);
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
-  }, [artist?.description, expanded]);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [artist?.description, expanded, loading]);
+
+  if (loading) return <section className="now-artist-about" role="status" aria-label="Loading artist details" aria-busy="true">
+    <div className="now-artist-skeleton-banner" />
+    <div className="now-artist-skeleton-info" aria-hidden="true"><span /><span /><span /><span /></div>
+  </section>;
 
   return <section className="now-artist-about" aria-label={`About ${name}`}>
     <div className="now-artist-banner">
@@ -49,10 +63,16 @@ export function ArtistAbout({ track, onArtist }: { track: Track; onArtist: (trac
       <h2>Meet the artist</h2>
     </div>
     <div className="now-artist-info">
-      {artist && <button className="now-artist-name" type="button" onClick={() => onArtist({ ...track, artist: artist.name, artist_id: artist.id })}>{artist.name}</button>}
+      <button
+        className="now-artist-name"
+        type="button"
+        onClick={() => onArtist({ ...track, artist: artist?.name || name, artist_id: artist?.id || track.artist_id })}
+      >
+        {artist?.name || name}
+      </button>
       {artist?.monthly_listeners && <div className="now-artist-listeners">{artist.monthly_listeners}</div>}
       <div className="now-artist-about-body">
-        {loading ? <p role="status">Loading artist details…</p> : failed ? <p role="status">Artist details couldn’t load.</p> : artist?.description ?
+        {failed ? <PlayerAlert message="Artist details couldn’t load." onDismiss={() => {}} action={{ label: "Retry", onClick: () => setRetry((value) => value + 1) }} /> : artist?.description ?
           <div id={descriptionId} ref={descriptionRef} className="now-artist-description" data-expanded={expanded}>{artist.description}</div> :
           <p>No artist description available.</p>}
       </div>

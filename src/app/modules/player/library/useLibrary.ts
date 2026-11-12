@@ -40,7 +40,13 @@ function trackAddedAt(track: LibraryTrack & { added_at?: string }): string {
 export function formatAddedAt(value?: string): string {
   const iso = parseAddedAt(value);
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 function withLibraryMeta(track: Track | LibraryTrack, addedAt?: string): LibraryTrack {

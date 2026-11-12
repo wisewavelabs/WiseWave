@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Clock3, Play, Shuffle } from "lucide-react";
 import { Music, type AlbumDetail, type Track } from "../../../mygo";
 import { Artwork } from "../../../shared/ui/Artwork";
+import { PlayingSpectrum } from "../../../shared/ui/PlayingSpectrum";
 import { Classic } from "../../../shared/ui/Classic";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { ArtistLinks } from "../shared/ArtistLinks";
 import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
+import { PlayerAlert } from "../shared/PlayerAlert";
 
-export function Album({ id, onBack, onPlay, onArtist }: {
-  id: string; onBack: () => void; onPlay: (track: Track, tracks: Track[]) => void; onArtist: (track: Track) => void;
+export function Album({ id, onBack, onPlay, onArtist, current = null, playing = false }: {
+  id: string; onBack: () => void; onPlay: (track: Track, tracks: Track[]) => void; onArtist: (track: Track) => void; current?: Track | null; playing?: boolean;
 }) {
   const openSongMenu = useSongMenu();
   const [album, setAlbum] = useState<AlbumDetail | null>(null);
@@ -33,7 +35,7 @@ export function Album({ id, onBack, onPlay, onArtist }: {
   };
   if (!album) return <div className="artist-page artist-page-status">
     <button className="mix-back" type="button" onClick={onBack}><ArrowLeft size={18} /> Back</button>
-    {error ? <div role="alert"><p className="feed-message">{error}</p><button className="artist-secondary" type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div> : <p className="feed-message loading-state" role="status"><Classic />Loading album…</p>}
+    {error ? <><PlayerAlert message={error} onDismiss={() => {}} action={{ label: "Retry", onClick: () => setRetry((value) => value + 1) }} /><button className="artist-secondary" type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button></> : <p className="feed-message loading-state" role="status"><Classic />Loading album…</p>}
   </div>;
   return <div className="album-page">
     <header className="album-hero">
@@ -49,7 +51,7 @@ export function Album({ id, onBack, onPlay, onArtist }: {
       <div className="album-columns"><span>#</span><span>Title</span><Clock3 size={16} /></div>
       {tracks.length ? tracks.map((track, index) => <div className="catalog-song" key={track.id} onClick={(event) => { if (event.target instanceof Element && event.target.closest("button, .artist-links")) return; onPlay(track, tracks); }}>
         <span className="catalog-song-number">{index + 1}</span>
-        <button className="catalog-song-cover" type="button" aria-label={`Play ${track.title}`} onClick={() => onPlay(track, tracks)}><Artwork src={album.artwork_url || track.album_art_url} size={48} lazy /><span><Play size={16} fill="currentColor" /></span></button>
+        <button className="catalog-song-cover" type="button" aria-label={`Play ${track.title}`} onClick={() => onPlay(track, tracks)}><Artwork src={album.artwork_url || track.album_art_url} size={48} lazy /><PlayingSpectrum active={current?.id === track.id} playing={playing} size={28} /><span><Play size={16} fill="currentColor" /></span></button>
         <div className="catalog-song-info"><button className="song-menu-title" type="button" onContextMenu={(event) => openSongMenu(event, { ...track, album_id: track.album_id || id })} onClick={() => onPlay(track, tracks)}><MarqueeText>{track.title}</MarqueeText></button><MarqueeText><ArtistLinks track={track} onOpen={onArtist} /></MarqueeText></div>
         <span className="catalog-song-duration">{trackDurationLabel(track)}</span>
       </div>) : <p className="feed-message">No songs available for this album.</p>}

@@ -106,6 +106,8 @@ export type SearchSuggestCache = {
   suggestions: string[];
   preview: Track[];
   artists: CatalogArtist[];
+  playlists: CatalogPlaylist[];
+  albums: CatalogAlbum[];
   tracksFailed: boolean;
   failed: boolean;
 };
@@ -133,11 +135,15 @@ export function peekSearchSuggest(query: string): SearchSuggestCache | null {
   const suggestions = readCache(suggestionsCache, key);
   const preview = readCache(tracksCache, key);
   const artists = readCache(artistsCache, key);
-  if (!suggestions && !preview && !artists) return null;
+  const playlists = readCache(playlistsCache, key);
+  const albums = readCache(albumsCache, key);
+  if (!suggestions && !preview && !artists && !playlists && !albums) return null;
   return {
     suggestions: (suggestions || []).slice(0, 6),
     preview: preview || [],
-    artists: (artists || []).slice(0, 4),
+    artists: (artists || []).slice(0, 15),
+    playlists: playlists || [],
+    albums: albums || [],
     tracksFailed: false,
     failed: false,
   };
@@ -165,12 +171,16 @@ export async function loadSearchSuggest(query: string): Promise<SearchSuggestCac
     cachedSearchSuggestions(query),
     cachedSearchTracks(query),
     cachedSearchArtists(query),
+    cachedSearchPlaylists(query),
+    cachedSearchAlbums(query),
   ]);
   const failures = results.filter((result) => result.status === "rejected").length;
   return {
     suggestions: results[0].status === "fulfilled" ? (results[0].value || []).slice(0, 6) : [],
     preview: results[1].status === "fulfilled" ? results[1].value || [] : [],
-    artists: results[2].status === "fulfilled" ? (results[2].value || []).slice(0, 4) : [],
+    artists: results[2].status === "fulfilled" ? (results[2].value || []).slice(0, 15) : [],
+    playlists: results[3].status === "fulfilled" ? results[3].value : [],
+    albums: results[4].status === "fulfilled" ? results[4].value : [],
     tracksFailed: results[1].status === "rejected",
     failed: failures > 0,
   };

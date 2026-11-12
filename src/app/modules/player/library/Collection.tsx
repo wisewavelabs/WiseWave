@@ -4,6 +4,7 @@ import type { Track } from "../../../mygo";
 import { formatAddedAt, type LibraryTrack, type Playlist } from "./useLibrary";
 import { ArtistLinks } from "../shared/ArtistLinks";
 import { Artwork, artworkURL } from "../../../shared/ui/Artwork";
+import { PlayingSpectrum } from "../../../shared/ui/PlayingSpectrum";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { PlayIcon } from "../../../shared/ui/icons";
 import { DEFAULT_PLAYLIST_THEME, useImageTheme } from "../shared/artworkColor";
@@ -18,12 +19,16 @@ export function Collection({
   tracks,
   onPlay,
   onArtist,
+  current = null,
+  playing = false,
 }: {
   kind: "liked" | "playlist";
   playlist?: Playlist;
   tracks: LibraryTrack[];
   onPlay: (track: Track, tracks: Track[]) => void;
   onArtist: (track: Track) => void;
+  current?: Track | null;
+  playing?: boolean;
 }) {
   const openSongMenu = useSongMenu();
   const openPlaylistMenu = usePlaylistMenu();
@@ -116,7 +121,7 @@ export function Collection({
           <span className="col-num-header">#</span>
           <span className="collection-grid-cols collection-library-grid-cols">
             <span className="col-title-header">Title</span>
-            <span className="collection-album-header">Album or podcast</span>
+            <span className="collection-meta-header">{kind === "liked" ? "Author" : "Album"}</span>
             <span className="col-date-header">Date added</span>
             <Clock3 className="col-duration-icon" size={16} />
           </span>
@@ -144,6 +149,7 @@ export function Collection({
                       size={40}
                       lazy
                     />
+                    <PlayingSpectrum active={current?.id === song.id} playing={playing} size={24} />
                     <span className="song-play-hover-overlay">
                       <PlayIcon className="play-hover-glyph" />
                     </span>
@@ -151,15 +157,21 @@ export function Collection({
                   <span className="song-title-wrapper">
                     <span className="song-menu-title" onContextMenu={(event) => openSongMenu(event, song, kind === "liked" ? { kind: "liked" } : playlist ? { kind: "playlist", id: playlist.id } : undefined)}><MarqueeText className="song-main-title">{song.title}</MarqueeText></span>
                     <small className="song-sub-label">
-                      <ArtistLinks track={song} onOpen={onArtist} />
+                      {kind === "liked" ? <>Liked song<span className="song-compact-artist"> · <ArtistLinks track={song} onOpen={onArtist} /></span></> : <ArtistLinks track={song} onOpen={onArtist} />}
                     </small>
                   </span>
                 </span>
 
-                <span className="collection-album-cell" onClick={(event) => event.stopPropagation()}>
-                  <MarqueeText className="collection-album-marquee">
-                    {song.album || "—"}
-                  </MarqueeText>
+                <span className="collection-meta-cell">
+                  {kind === "liked" ? (
+                    <MarqueeText className="collection-meta-marquee song-author-marquee">
+                      <ArtistLinks track={song} onOpen={onArtist} />
+                    </MarqueeText>
+                  ) : (
+                    <MarqueeText className="collection-meta-marquee">
+                      {song.album || "—"}
+                    </MarqueeText>
+                  )}
                 </span>
 
                 <span className="song-date-cell">
