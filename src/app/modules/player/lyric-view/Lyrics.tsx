@@ -55,13 +55,20 @@ export function Lyrics({
     );
   }, [clock, position, duration, playing, track?.id, seekVersion, offset]);
 
+  const plainText = useMemo(() => {
+    const value = plain.trim();
+    if (!value) return "";
+    const normalized = value.toLowerCase().replace(/[.!]+$/g, "");
+    if (normalized === "lyrics unavailable" || normalized === "no lyrics found" || normalized === "lyrics not found") return "";
+    return value;
+  }, [plain]);
   const normalized = useMemo<LyricLine[]>(() => {
     if (settings.lyr === false) {
-      const text = plain.trim() ? plain.split(/\r?\n/) : lines.filter((line) => !line.is_background).map((line) => line.text);
+      const text = plainText ? plainText.split(/\r?\n/) : lines.filter((line) => !line.is_background).map((line) => line.text);
       return text.filter((line) => line?.trim()).map((text) => ({ text, startTimeMs: null }));
     }
-    return lines.length ? normalizeLyricLines(lines) : plain.split(/\r?\n/).filter((line) => line.trim()).map((text) => ({ text, startTimeMs: null }));
-  }, [lines, plain, settings.lyr]);
+    return lines.length ? normalizeLyricLines(lines) : plainText.split(/\r?\n/).filter((line) => line.trim()).map((text) => ({ text, startTimeMs: null }));
+  }, [lines, plainText, settings.lyr]);
   const hasWords = useMemo(
     () => normalized.some((l) => l.syllables && l.syllables.length > 0),
     [normalized]
@@ -79,7 +86,7 @@ export function Lyrics({
     [onSeek, offset]
   );
 
-  const unavailable = !loading && !lines.length && !plain.trim();
+  const unavailable = !loading && !lines.length && !plainText;
   const theme = DEFAULT_LYRICS_THEME;
 
   const durationSeconds =

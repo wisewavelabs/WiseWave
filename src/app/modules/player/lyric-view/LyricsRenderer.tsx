@@ -491,6 +491,7 @@ const ExistingLyrics = memo(function ExistingLyrics({
         className="player-lyrics-scroll player-scroll relative h-full overflow-y-auto px-10 py-8"
         data-lenis-prevent
         data-lyric-following={followingActiveLyric}
+        data-lyric-synced={synced}
         data-word-synced={wordSynced}
         ref={lyricsRef}
       >
@@ -506,7 +507,7 @@ const ExistingLyrics = memo(function ExistingLyrics({
                   <p className="text-xl font-semibold tracking-tight text-white">
                     The song is here, the words aren&apos;t.
                   </p>
-                  <p className="text-sm leading-6 text-white/70">
+                  <p className="player-lyrics-empty-desc">
                     We couldn&apos;t find a reliable lyrics match.
                   </p>
                 </div>
@@ -514,7 +515,7 @@ const ExistingLyrics = memo(function ExistingLyrics({
             ) : displayedLines.length ? (
               <>
                 {!synced && (
-                  <h2 className="-mb-3 flex items-center gap-2 text-lg font-medium tracking-wide text-white/70 opacity-70">
+                  <h2 className="player-lyrics-unsynced-header -mb-3 flex items-center gap-2 text-lg font-medium tracking-wide">
                     <Clock3 aria-hidden="true" className="size-4" />
                     These lyrics aren’t time-synced yet.
                   </h2>
@@ -548,7 +549,7 @@ const ExistingLyrics = memo(function ExistingLyrics({
                                 ? "text-white opacity-100"
                                 : "text-white/40 opacity-40"
                             }`
-                          : "text-[40px] font-extrabold leading-[1.2] tracking-normal text-white/60 opacity-60"
+                          : "text-[40px] font-extrabold leading-[1.2] tracking-normal"
                       } ${
                         line.startTimeMs === null
                           ? ""
@@ -612,7 +613,7 @@ const ExistingLyrics = memo(function ExistingLyrics({
       {!isLoading && !unavailable && synced && activeIndex >= 0 && !followingActiveLyric && (
         <button
           aria-label="Center active lyrics and resume sync"
-          className="absolute bottom-[84px] left-1/2 z-30 flex min-h-12 -translate-x-1/2 items-center gap-2.5 rounded-lg bg-white px-5 py-3 text-base font-bold text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className="absolute bottom-[56px] left-1/2 z-30 flex min-h-12 -translate-x-1/2 items-center gap-2.5 rounded-lg bg-white px-5 py-3 text-base font-bold text-black shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           type="button"
           onClick={() => {
             pendingSeekIndexRef.current = null;

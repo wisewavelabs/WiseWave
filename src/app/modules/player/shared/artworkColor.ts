@@ -27,6 +27,7 @@ export const DEFAULT_PLAYLIST_THEME: LyricsTheme = {
 };
 
 const themeCache = new Map<string, LyricsTheme>();
+const pendingThemes = new Map<string, Promise<LyricsTheme>>();
 const MAX_CACHE_SIZE = 250;
 
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
@@ -85,7 +86,17 @@ interface Swatch {
   population: number;
 }
 
-export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme> {
+export function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme> {
+  const cached = themeCache.get(imageUrl);
+  if (cached) return Promise.resolve(cached);
+  const pending = pendingThemes.get(imageUrl);
+  if (pending) return pending;
+  const request = loadArtworkTheme(imageUrl).finally(() => pendingThemes.delete(imageUrl));
+  pendingThemes.set(imageUrl, request);
+  return request;
+}
+
+async function loadArtworkTheme(imageUrl: string): Promise<LyricsTheme> {
   if (!imageUrl) return DEFAULT_LYRICS_THEME;
   const cached = themeCache.get(imageUrl);
   if (cached) return cached;
@@ -132,8 +143,7 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
     const imageData = ctx.getImageData(0, 0, sampleSize, sampleSize);
     const pixels = imageData.data;
 
-    // 5-bit color quantization into buckets
-    const bucketMap = new Map<number, ColorBucket>();
+    const quantizedBuckets = new Map<number, ColorBucket>();
     let totalSamples = 0;
 
     for (let i = 0; i < pixels.length; i += 4) {
@@ -145,14 +155,13 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
       const b = pixels[i + 2];
 
       const [, , l] = rgbToHsl(r, g, b);
-      // Filter out extreme blacks (letterboxing/borders) and blown-out pure whites
       if (l < 0.06 || l > 0.94) continue;
 
       const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-      let bucket = bucketMap.get(key);
+      let bucket = quantizedBuckets.get(key);
       if (!bucket) {
         bucket = { rSum: 0, gSum: 0, bSum: 0, count: 0 };
-        bucketMap.set(key, bucket);
+        quantizedBuckets.set(key, bucket);
       }
       bucket.rSum += r;
       bucket.gSum += g;
@@ -161,12 +170,12 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
       totalSamples += 1;
     }
 
-    if (totalSamples === 0 || bucketMap.size === 0) {
+    if (totalSamples === 0 || quantizedBuckets.size === 0) {
       themeCache.set(imageUrl, DEFAULT_LYRICS_THEME);
       return DEFAULT_LYRICS_THEME;
     }
 
-    const sortedBuckets = Array.from(bucketMap.values()).sort((a, b) => b.count - a.count);
+    const sortedBuckets = Array.from(quantizedBuckets.values()).sort((a, b) => b.count - a.count);
 
     const swatches: Swatch[] = [];
     for (const b of sortedBuckets.slice(0, 32)) {
@@ -185,25 +194,19 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
       }
     }
 
-    // Prioritize chromatic swatches so dull studio/backdrop areas never overpower real album colors
     const chromaticSwatches = swatches.filter((sw) => sw.s >= 0.18);
     const candidatePool = chromaticSwatches.length > 0 ? chromaticSwatches : swatches;
 
     const maxPop = Math.max(...candidatePool.map((s) => s.population), 1);
 
-    // Vibrant scoring: heavily favors vivid saturation and healthy mid-tones
     let bestSwatch = candidatePool[0];
     let bestScore = -1;
 
     for (const sw of candidatePool) {
-      // Saturation is the most critical factor for a rich album color
-      const satScore = sw.s * 0.55;
-      // Population factor with square root to prevent huge backgrounds from eclipsing vibrant subjects
-      const popScore = Math.sqrt(sw.population / maxPop) * 0.25;
-      // Lightness sweet spot around 0.30 - 0.60
-      const lightScore = Math.max(0, 1 - Math.abs(sw.l - 0.45) * 1.5) * 0.20;
-
-      const score = satScore + popScore + lightScore;
+      const saturationScore = sw.s * 0.55;
+      const populationScore = Math.sqrt(sw.population / maxPop) * 0.25;
+      const midtoneScore = Math.max(0, 1 - Math.abs(sw.l - 0.45) * 1.5) * 0.20;
+      const score = saturationScore + populationScore + midtoneScore;
       if (score > bestScore) {
         bestScore = score;
         bestSwatch = sw;
@@ -219,23 +222,19 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
     let flipbookFill: string;
 
     if (rawSat < 0.15) {
-      // Clean dark neutral slate for monochrome / black & white covers
       background = "#242428";
       midColor = "#161619";
       activeText = "#ffffff";
       inactiveText = "rgba(255, 255, 255, 0.48)";
       flipbookFill = "#d8d8dc";
     } else {
-      // 1:1 tuned to Liked Songs palette curve (depth ~23% lightness, sophisticated ~30% saturation, ~15% mid-tone)
       const bgSat = Math.min(Math.max(rawSat * 0.75, 0.26), 0.38);
       const bgLight = 0.23;
       const midSat = bgSat * 0.46;
       const midLight = 0.15;
       background = hslToHex(h, bgSat, bgLight);
       midColor = hslToHex(h, midSat, midLight);
-
       activeText = "#ffffff";
-      // Tinted inactive text matching the hue at high lightness (> 5:1 contrast)
       inactiveText = hslToHex(h, Math.min(bgSat * 0.5, 0.35), 0.75);
       flipbookFill = hslToHex(h, Math.min(bgSat, 0.65), 0.82);
     }
@@ -263,28 +262,21 @@ export async function extractArtworkTheme(imageUrl: string): Promise<LyricsTheme
 
 export function useImageTheme(imageUrl: string | null | undefined, fallback: LyricsTheme = DEFAULT_LYRICS_THEME): LyricsTheme {
   const artworkUrl = imageUrl || "";
-  const [theme, setTheme] = useState<LyricsTheme>(() => {
-    if (artworkUrl && themeCache.has(artworkUrl)) {
-      return themeCache.get(artworkUrl)!;
-    }
-    return fallback;
-  });
+  const [result, setResult] = useState<{ url: string; theme: LyricsTheme }>({ url: "", theme: fallback });
 
   useEffect(() => {
     if (!artworkUrl) {
-      setTheme(fallback);
       return;
     }
 
     if (themeCache.has(artworkUrl)) {
-      setTheme(themeCache.get(artworkUrl)!);
       return;
     }
 
     let cancelled = false;
     extractArtworkTheme(artworkUrl).then((extracted) => {
       if (!cancelled) {
-        setTheme(extracted === DEFAULT_LYRICS_THEME ? fallback : extracted);
+        setResult({ url: artworkUrl, theme: extracted === DEFAULT_LYRICS_THEME ? fallback : extracted });
       }
     });
 
@@ -293,7 +285,7 @@ export function useImageTheme(imageUrl: string | null | undefined, fallback: Lyr
     };
   }, [artworkUrl, fallback]);
 
-  return theme;
+  return themeCache.get(artworkUrl) || (result.url === artworkUrl ? result.theme : fallback);
 }
 
 export function useArtworkTheme(track: Track | null | undefined): LyricsTheme {

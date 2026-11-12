@@ -98,6 +98,10 @@ function preloadArtwork(url: string, src: string) {
   warmArtwork();
 }
 
+export function preloadArtworkSource(src: string, size: number) {
+  preloadArtwork(artworkURL(src, size * 2), src);
+}
+
 function warmArtwork() {
   while (preloading < 4 && preloadQueue.length) {
     const item = preloadQueue.shift()!;
@@ -107,9 +111,8 @@ function warmArtwork() {
     image.fetchPriority = "low";
     const finish = (loaded: boolean) => {
       let allowWide = false;
-      try { allowWide = isYtimg(new URL(item.url).hostname); } catch { /* ignore */ }
+      try { allowWide = isYtimg(new URL(item.url).hostname); } catch {}
       if (loaded && isAcceptableCover(image.naturalWidth, image.naturalHeight, allowWide)) markLoaded(item.url);
-      else if (loaded) markFailed(item.url, item.src);
       pendingUrls.delete(item.url);
       preloading--;
       warmArtwork();
@@ -125,8 +128,9 @@ export function Artwork({ src, size, className = "", lazy = false, rootMargin = 
   const allowWide = allowNonSquare || (() => {
     try { return Boolean(src && isYtimg(new URL(src).hostname)); } catch { return false; }
   })();
+  const iconSize = Math.max(28, Math.min(56, Math.round(size * 0.32)));
   const Placeholder = typeof placeholder === "string"
-    ? (placeholder === "user" ? <UserRound className="artwork-placeholder" /> : <Music2 className="artwork-placeholder" />)
+    ? (placeholder === "user" ? <UserRound className="artwork-placeholder" size={iconSize} strokeWidth={1.75} /> : <Music2 className="artwork-placeholder" size={iconSize} strokeWidth={1.75} />)
     : placeholder;
   const ref = useRef<HTMLSpanElement>(null);
   const retryTimer = useRef<number | null>(null);
@@ -177,11 +181,11 @@ export function Artwork({ src, size, className = "", lazy = false, rootMargin = 
   }, []);
 
   if (!url || isFailed) {
-    return <span className={`artwork ${className}`} aria-hidden="true">{Placeholder}</span>;
+    return <span className={`artwork ${className}`} aria-hidden="true"><span className="artwork-placeholder-wrap">{Placeholder}</span></span>;
   }
 
   return <span ref={ref} className={`artwork ${className}`} data-loading={loading || undefined} aria-busy={loading}>
-    {!isLoaded && <span aria-hidden="true">{Placeholder}</span>}
+    {!isLoaded && <span className="artwork-placeholder-wrap" aria-hidden="true">{Placeholder}</span>}
     {(visible || isLoaded) && <img
       key={`${url}:${attempt}`}
       src={imageSrc}

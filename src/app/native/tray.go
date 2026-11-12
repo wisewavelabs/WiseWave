@@ -2,6 +2,8 @@ package native
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -19,6 +21,7 @@ type TrayState struct {
 
 type TrayControl struct {
 	mu                sync.RWMutex
+	startupMu         sync.Mutex
 	state             TrayState
 	window            *mygo.Window
 	tray              *mygo.Tray
@@ -40,6 +43,77 @@ func (tray *TrayControl) SetStartup(enabled bool) error {
 		return errors.New("Launch at startup is available in the installed app")
 	}
 	return mygo.App.SetOpenAtLogin(enabled)
+}
+
+func startupModeFile() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "WiseWave", "startup-mode"), nil
+}
+
+func startupMinimized() bool {
+	path, err := startupModeFile()
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	return err == nil && string(data) == "Minimized"
+}
+
+func (tray *TrayControl) StartupMode() string {
+	tray.startupMu.Lock()
+	defer tray.startupMu.Unlock()
+	if !mygo.App.OpenAtLogin() {
+		return "No"
+	}
+	if startupMinimized() {
+		return "Minimized"
+	}
+	return "Yes"
+}
+
+func (tray *TrayControl) SetStartupMode(mode string) error {
+	tray.startupMu.Lock()
+	defer tray.startupMu.Unlock()
+	if mode != "No" && mode != "Yes" && mode != "Minimized" {
+		return errors.New("Invalid startup mode")
+	}
+	if mygo.IsDev() {
+		return errors.New("Launch at startup is available in the installed app")
+	}
+	path, err := startupModeFile()
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), ".startup-*")
+	if err != nil {
+		return err
+	}
+	temp := file.Name()
+	defer os.Remove(temp)
+	if _, err = file.WriteString(mode); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+	previous := mygo.App.OpenAtLogin()
+	if err = mygo.App.SetOpenAtLogin(mode != "No"); err != nil {
+		return err
+	}
+	if err = os.Rename(temp, path); err != nil {
+		if rollback := mygo.App.SetOpenAtLogin(previous); rollback != nil {
+			return errors.Join(err, rollback)
+		}
+		return err
+	}
+	return nil
 }
 
 func (tray *TrayControl) Update(state TrayState) {
@@ -70,13 +144,20 @@ func (tray *TrayControl) Action(action string) error {
 		tray.quitting.Store(true)
 		mygo.App.Quit()
 		return nil
-	case "toggle", "next", "mute":
+	case "toggle", "next", "mute", "acknowledgement":
 		state := tray.State()
 		if (action == "toggle" && !state.HasTrack) || (action == "next" && !state.HasNext) {
 			return errors.New("Playback control unavailable")
 		}
 		if tray.window == nil {
 			return errors.New("Player unavailable")
+		}
+		if action == "acknowledgement" {
+			if tray.window.IsMinimized() {
+				tray.window.Restore()
+			}
+			tray.window.Show()
+			tray.window.Focus()
 		}
 		return TrayAction.Emit(tray.window, action)
 	default:

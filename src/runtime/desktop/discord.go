@@ -28,7 +28,6 @@ type DiscordState struct {
 	Title       string  `json:"title"`
 	Artist      string  `json:"artist"`
 	ArtistID    string  `json:"artist_id"`
-	Album       string  `json:"album"`
 	ArtworkURL  string  `json:"artwork_url"`
 	Position    float64 `json:"position"`
 	Duration    float64 `json:"duration"`
@@ -112,7 +111,6 @@ func (d *Discord) Update(state DiscordState) {
 		VideoID:     state.TrackID,
 		Title:       state.Title,
 		Artist:      state.Artist,
-		Album:       state.Album,
 		SongURL:     songURL,
 		ArtistURL:   artistURL,
 		ArtworkURL:  state.ArtworkURL,

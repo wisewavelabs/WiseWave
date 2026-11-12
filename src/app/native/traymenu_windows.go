@@ -67,7 +67,10 @@ func showTrayMenu(control *TrayControl) error {
 	if ok, _, callErr := appendMenu.Call(menu, 0x800, 0, 0); ok == 0 {
 		return fmt.Errorf("add separator: %w", callErr)
 	}
-	if err := add(5, "Exit", true, false); err != nil {
+	if err := add(5, "Acknowledgement", true, false); err != nil {
+		return err
+	}
+	if err := add(6, "Exit", true, false); err != nil {
 		return err
 	}
 	var point struct{ x, y int32 }
@@ -94,6 +97,8 @@ func showTrayMenu(control *TrayControl) error {
 	case 4:
 		return mygo.App.SetOpenAtLogin(!mygo.App.OpenAtLogin())
 	case 5:
+		return control.Action("acknowledgement")
+	case 6:
 		return control.Action("quit")
 	}
 	return nil

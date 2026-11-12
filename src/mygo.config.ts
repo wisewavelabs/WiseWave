@@ -11,4 +11,7 @@ export default defineConfig({
   devCommand: "npm run dev:web",
   buildCommand: "npm run build:web",
   frontendDist: "dist",
+  windows: {
+    installerInclude: "build/installer.nsh",
+  },
 });

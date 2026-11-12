@@ -60,7 +60,6 @@ type State struct {
 	VideoID     string
 	Title       string
 	Artist      string
-	Album       string
 	SongURL     string
 	ArtistURL   string
 	ArtworkURL  string
@@ -245,7 +244,6 @@ type activityKey struct {
 	VideoID     string
 	Title       string
 	Artist      string
-	Album       string
 	SongURL     string
 	ArtistURL   string
 	ArtworkURL  string
@@ -258,7 +256,7 @@ type activityKey struct {
 func keyFor(state State) activityKey {
 	return activityKey{
 		VideoID: state.VideoID, Title: state.Title, Artist: state.Artist,
-		Album: state.Album, SongURL: state.SongURL, ArtistURL: state.ArtistURL,
+		SongURL: state.SongURL, ArtistURL: state.ArtistURL,
 		ArtworkURL: state.ArtworkURL, Duration: state.Duration.Truncate(time.Second), SeekVersion: state.SeekVersion,
 	}
 }
@@ -282,7 +280,6 @@ type timestamps struct {
 
 type assets struct {
 	LargeImage string `json:"large_image,omitempty"`
-	LargeText  string `json:"large_text,omitempty"`
 }
 
 func makeActivity(state State, startedAt int64) *activity {
@@ -303,9 +300,6 @@ func makeActivity(state State, startedAt int64) *activity {
 	if artworkURL := validArtworkURL(state.ArtworkURL); artworkURL != "" {
 		a.Assets = &assets{
 			LargeImage: artworkURL,
-		}
-		if state.Album != "" {
-			a.Assets.LargeText = truncate(state.Album, 128)
 		}
 	}
 	return a
