@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { TrayControl, type Track } from "../../mygo";
-import { Artwork } from "../../shared/ui/Artwork";
+import { artworkURL } from "../../shared/ui/Artwork";
 import { PlayerAlert } from "../player/shared/PlayerAlert";
 import { AudioLines, BookOpen, Check, ChevronLeft, ChevronRight, CircleHelp, ExternalLink, Code2, Globe, Mic2, Palette, Shield, X } from "lucide-react";
 import appIcon from "../../../../resources/icon.png";
@@ -18,10 +18,38 @@ import goM4ALicense from "../../../../resources/go-m4a-license.txt?raw";
 import simdLicense from "../../../../resources/simd-license.txt?raw";
 import { appVersion } from "../../version";
 import { LYRIC_SOURCES } from "../player/lyric-view/LyricCredit";
+import { ProgressStylePreview } from "../player/playback/ProgressStylePreview";
+import { PROGRESS_STYLES, readProgressStyle, type ProgressStyle } from "../player/playback/progressStyle";
+import { readZoom, setZoom, ZOOM_LEVELS } from "../../shared/zoom";
+import { Equalizer } from "./Equalizer";
+import { linkLabel, links } from "../../shared/links";
 
 function formatTime(value: number) {
   const seconds = Math.max(0, Math.floor(value));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function ZoomControl() {
+  const [zoom, setCurrent] = useState(readZoom);
+  useEffect(() => {
+    const sync = () => setCurrent(readZoom());
+    window.addEventListener("wisewave-zoom-changed", sync);
+    return () => window.removeEventListener("wisewave-zoom-changed", sync);
+  }, []);
+  return <div className="settings-zoom">
+    <div className="settings-zoom-previews" aria-hidden="true">
+      {["Dense", "Default", "Spacious"].map((label, index) => <div key={label} className={`settings-zoom-preview ${index === (zoom < 1 ? 0 : zoom > 1 ? 2 : 1) ? "is-active" : ""}`}>
+        <span className={`settings-zoom-diagram diagram-${index}`}><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></span>
+        <span>{label}</span>
+      </div>)}
+    </div>
+    <div className="settings-zoom-levels" role="radiogroup" aria-label="Zoom level">
+      {ZOOM_LEVELS.map((level) => <label className="settings-zoom-option" key={level}>
+        <input type="radio" name="zoom-level" value={level} checked={zoom === level} onChange={() => setZoom(level)} />
+        <span>{Math.round(level * 100)}%</span>
+      </label>)}
+    </div>
+  </div>;
 }
 
 export interface SettingsProps {
@@ -41,12 +69,13 @@ export interface SettingsProps {
 
 const DEFAULT_SETTINGS = {
   ui: "Default",
+  progressStyle: "Default",
   art: true,
   motion: false,
   tray: true,
   mini: false,
-  startup: false,
-  norm: true,
+  startup: "No",
+  norm: false,
   vol: 100,
   auto: true,
   resume: true,
@@ -81,7 +110,7 @@ interface SettingRowDef {
   l: string;
   d?: string | null;
   dep?: keyof SettingsState;
-  t: "tog" | "seg" | "dd" | "rng" | "time" | "btn" | "txt" | "kb";
+  t: "tog" | "seg" | "dd" | "prog" | "zoom" | "eq" | "rng" | "time" | "btn" | "txt" | "kb";
   o?: readonly string[];
   min?: number;
   max?: number;
@@ -111,7 +140,7 @@ const SETTINGS_SECTIONS: Record<string, SettingSectionDef> = {
       {
         h: "Display",
         r: [
-          { k: "ui", l: "Interface size", o: ["Compact", "Default", "Large"], d: "Scales text and spacing across the app.", t: "dd" },
+          { l: "Zoom level", d: "Adjust the size of the interface.", t: "zoom" },
           { k: "art", l: "Lyrics artwork color", d: "Tint the lyrics page with the current cover.", t: "tog" },
           { k: "motion", l: "Reduce motion", d: "Turn off animations and transitions.", t: "tog" },
         ],
@@ -121,7 +150,7 @@ const SETTINGS_SECTIONS: Record<string, SettingSectionDef> = {
         r: [
           { k: "tray", l: "Minimize to tray", d: "Keep music playing when you close the window.", t: "tog" },
           { k: "mini", l: "Show mini player when minimized", t: "tog" },
-          { k: "startup", l: "Launch at startup", t: "tog" },
+          { k: "startup", l: "Open WiseWave automatically after you log in", o: ["Minimized", "Yes", "No"], t: "dd" },
         ],
       },
     ],
@@ -134,6 +163,19 @@ const SETTINGS_SECTIONS: Record<string, SettingSectionDef> = {
         r: [
           { k: "norm", l: "Normalize volume", d: "Keeps loudness even between tracks.", t: "tog" },
           { k: "vol", l: "Startup volume", min: 0, max: 100, u: "%", z: "Muted", t: "rng" },
+          { l: "Equalizer", d: "Adjust the sound across six frequency bands.", t: "eq" },
+        ],
+      },
+      {
+        h: "Player",
+        r: [
+          {
+            k: "progressStyle",
+            l: "Progress style",
+            o: PROGRESS_STYLES,
+            d: "Choose the look of the player timeline.",
+            t: "prog",
+          },
         ],
       },
       {
@@ -281,6 +323,8 @@ export function Settings({
       const parsed = stored ? JSON.parse(stored) : {};
       ["dcPreset", "dcLine1", "dcLine2", "dcLine3", "dcArt", "dcTime", "dcPause"].forEach((key) => delete parsed[key]);
       if (parsed.lyrStyle === "Glow" || parsed.lyrStyle === "Eeriee") parsed.lyrStyle = "Default";
+      parsed.progressStyle = readProgressStyle(parsed.progressStyle);
+      if (typeof parsed.startup === "boolean") parsed.startup = parsed.startup ? "Yes" : "No";
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
@@ -302,6 +346,9 @@ export function Settings({
   const [showLyricsSources, setShowLyricsSources] = useState(false);
   const [query, setQuery] = useState("");
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [progressPickerOpen, setProgressPickerOpen] = useState(false);
+  const [progressPickerClosing, setProgressPickerClosing] = useState(false);
+  const progressPickerTimer = useRef<number | null>(null);
   const [note, setNote] = useState<string>("");
   const [confirmHistory, setConfirmHistory] = useState(false);
   const [exportingHistory, setExportingHistory] = useState(false);
@@ -374,14 +421,14 @@ export function Settings({
       return;
     }
     if (key === "startup") {
-      void TrayControl.setStartup(Boolean(value)).then(() => saveSetting(key, value)).catch((error: unknown) => setNote(error instanceof Error ? error.message : "Could not update launch at startup."));
+      void TrayControl.setStartupMode(String(value)).then(() => saveSetting(key, value)).catch((error: unknown) => setNote(error instanceof Error ? error.message : "Could not update launch at startup."));
       return;
     }
     saveSetting(key, value);
   };
 
   useEffect(() => {
-    void TrayControl.startupEnabled().then((enabled) => setSt((previous) => ({ ...previous, startup: enabled }))).catch(() => setNote("Could not check launch at startup."));
+    void TrayControl.startupMode().then((mode) => setSt((previous) => ({ ...previous, startup: mode }))).catch(() => setNote("Could not check launch at startup."));
   }, []);
 
   useEffect(() => {
@@ -418,8 +465,23 @@ export function Settings({
     closeTimer.current = window.setTimeout(() => onCloseRef.current(), 150);
   };
 
+  const closeProgressPicker = () => {
+    if (progressPickerTimer.current !== null) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.motion === "reduce") {
+      setProgressPickerOpen(false);
+      return;
+    }
+    setProgressPickerClosing(true);
+    progressPickerTimer.current = window.setTimeout(() => {
+      setProgressPickerOpen(false);
+      setProgressPickerClosing(false);
+      progressPickerTimer.current = null;
+    }, 150);
+  };
+
   useEffect(() => () => {
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+    if (progressPickerTimer.current !== null) window.clearTimeout(progressPickerTimer.current);
   }, []);
 
   useEffect(() => {
@@ -430,7 +492,8 @@ export function Settings({
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (openDropdown) setOpenDropdown(null);
+        if (progressPickerOpen) closeProgressPicker();
+        else if (openDropdown) setOpenDropdown(null);
         else closeSettings();
       }
     };
@@ -440,7 +503,7 @@ export function Settings({
       document.removeEventListener("click", handleDocumentClick);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [openDropdown]);
+  }, [openDropdown, progressPickerOpen]);
 
   const isDimmed = (dep?: keyof SettingsState) => {
     if (!dep) return false;
@@ -490,6 +553,20 @@ export function Settings({
             ))}
           </div>
         );
+
+      case "prog": {
+        return (
+          <button
+            type="button"
+            className="surface-btn"
+            aria-haspopup="dialog"
+            aria-expanded={progressPickerOpen}
+            onClick={() => setProgressPickerOpen(true)}
+          >
+            Customize
+          </button>
+        );
+      }
 
       case "dd": {
         const isOpen = openDropdown === r.k;
@@ -621,8 +698,10 @@ export function Settings({
 
   const renderRow = (r: SettingRowDef, idx: number) => {
     const dimmed = isDimmed(r.dep);
+    if (r.t === "eq") return <Equalizer key={`${r.l}-${idx}`} />;
+    if (r.t === "zoom") return <div className="settings-row settings-zoom-row" key={`${r.l}-${idx}`}><div><b>{r.l}</b>{r.d && <small>{r.d}</small>}</div><ZoomControl /></div>;
     return (
-      <div className={`settings-row ${r.t === "dd" ? "settings-row-select" : ""} ${dimmed ? "dim" : ""}`} key={`${r.l}-${idx}`}>
+      <div className={`settings-row ${r.t === "dd" || r.t === "prog" ? "settings-row-select" : ""} ${dimmed ? "dim" : ""}`} key={`${r.l}-${idx}`}>
         <div>
           <b>{r.l}</b>
           {r.d ? <small>{r.d}</small> : null}
@@ -668,14 +747,16 @@ export function Settings({
 
   const currentSection = SETTINGS_SECTIONS[activeSection] || SETTINGS_SECTIONS.appearance;
 
-  const discordPreviewData = useMemo(() => ({
-    titleText: track?.title || "-",
-    artistText: track?.artist || "-",
-    albumText: null,
-    artworkSrc: track?.album_art_url || "",
-    currentTimeText: track ? formatTime(currentPosition) : "--:--",
-    totalTimeText: track ? formatTime(currentDuration) : "--:--",
-  }), [track, currentPosition, currentDuration]);
+  const discordPreviewData = useMemo(() => {
+    const cover = track?.album_art_url ? artworkURL(track.album_art_url, 152) : "";
+    return {
+      titleText: track?.title || "Nothing playing",
+      artistText: track?.artist || null,
+      artworkSrc: cover || (track ? "wisewave_logo" : ""),
+      currentTimeText: track ? formatTime(currentPosition) : "--:--",
+      totalTimeText: track ? formatTime(currentDuration) : "--:--",
+    };
+  }, [track, currentPosition, currentDuration]);
 
   const progressPercent = track && currentDuration > 0
     ? Math.min(100, Math.max(0, (currentPosition / currentDuration) * 100))
@@ -746,7 +827,7 @@ export function Settings({
               {showLyricsSources ? <>
                 <button className="settings-about-back" type="button" onClick={() => { setShowLyricsSources(false); if (mainRef.current) mainRef.current.scrollTop = 0; }}><ChevronLeft size={17} aria-hidden="true" />Open source licenses</button>
                 <div className="settings-licenses-heading"><h1>Lyrics sources</h1><p>Sources and communities that provide lyrics in WiseWave.</p></div>
-                <div className="settings-license-list settings-source-list">{Object.entries(LYRIC_SOURCES).map(([id, source]) => <a key={id} href={source.url} target="_blank" rel="noopener noreferrer"><span><strong>{source.name}</strong><small>{source.notice}</small></span><ExternalLink size={17} /></a>)}</div>
+                <div className="settings-license-list settings-source-list">{Object.entries(LYRIC_SOURCES).map(([id, source]) => <a key={id} href={source.url} target="_blank" rel="noopener noreferrer"><span><strong>{source.name}</strong></span><ExternalLink size={17} /></a>)}</div>
               </> : <>
                 <button className="settings-about-back" type="button" onClick={() => setShowLicenses(false)}><ChevronLeft size={17} aria-hidden="true" />About</button>
                 <div className="settings-licenses-heading"><h1>Open source licenses</h1><p>Licenses and notices for included components.</p></div>
@@ -761,14 +842,14 @@ export function Settings({
                 </details>)}</div>
               </>}
             </div> : <div className="settings-about">
-              <div className="settings-about-brand"><img src={appIcon} alt="" /><div><h1>WiseWave</h1><span>Desktop · Version {appVersion}</span></div></div>
+              <div className="settings-about-brand"><img src={appIcon} alt="" /><div><h1>WiseWave</h1><span>Version {appVersion}</span></div></div>
               <h2>Developer</h2>
-              <a href="https://github.com/Fristonn" target="_blank" rel="noreferrer"><Code2 size={21} /><span><strong>GitHub</strong><small>github.com/Fristonn</small></span><ExternalLink size={17} /></a>
-              <a href="https://discord.com/users/1240601660984791040" target="_blank" rel="noreferrer"><DiscordIcon size={21} /><span><strong>Friston</strong><small>Hellooooo, Cutieee &lt;3</small></span><ExternalLink size={17} /></a>
+              <a href={links.github} target="_blank" rel="noreferrer"><Code2 size={21} /><span><strong>GitHub</strong><small>{linkLabel(links.github)}</small></span><ExternalLink size={17} /></a>
+              <a href={links.discord} target="_blank" rel="noreferrer"><DiscordIcon size={21} /><span><strong>Friston</strong><small>idk what to write here lol</small></span><ExternalLink size={17} /></a>
               <h2>Community</h2>
-              <a href="https://discord.gg/xNYnxjE6hS" target="_blank" rel="noreferrer"><DiscordIcon size={21} /><span><strong>Discord</strong><small>discord.gg/xNYnxjE6hS</small></span><ExternalLink size={17} /></a>
+              <a href={links.community} target="_blank" rel="noreferrer"><DiscordIcon size={21} /><span><strong>Discord</strong><small>{linkLabel(links.community)}</small></span><ExternalLink size={17} /></a>
               <h2>App</h2>
-              <a href="https://wisewave.me" target="_blank" rel="noreferrer"><Globe size={21} /><span><strong>Website</strong><small>wisewave.me</small></span><ExternalLink size={17} /></a>
+              <a href={links.site} target="_blank" rel="noreferrer"><Globe size={21} /><span><strong>Website</strong><small>{linkLabel(links.site)}</small></span><ExternalLink size={17} /></a>
               <button type="button" onClick={() => { setShowLicenses(true); if (mainRef.current) mainRef.current.scrollTop = 0; }}><BookOpen size={21} /><span><strong>Open source licenses</strong><small>Licenses and notices for included components</small></span><ChevronRight size={19} /></button>
             </div>)}
 
@@ -779,30 +860,30 @@ export function Settings({
                   <div className={`discord-activity ${!st.dc ? "dim" : ""}`}>
                     <div className="discord-label">Listening to WiseWave</div>
                     <div className="discord-body">
-                      {discordPreviewData.artworkSrc !== null && (
-                        discordPreviewData.artworkSrc && discordPreviewData.artworkSrc !== "wisewave_logo" ? (
-                          <Artwork className="discord-art" src={discordPreviewData.artworkSrc} size={76} />
-                        ) : discordPreviewData.artworkSrc === "wisewave_logo" ? (
-                          <img className="discord-art" src={appIcon} alt="" />
-                        ) : (
-                          <div className="discord-placeholder">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M9 18V5l12-2v13" />
-                              <circle cx="6" cy="18" r="3" />
-                              <circle cx="18" cy="16" r="3" />
-                            </svg>
-                          </div>
-                        )
+                      {discordPreviewData.artworkSrc && discordPreviewData.artworkSrc !== "wisewave_logo" ? (
+                        <img
+                          className="discord-art"
+                          src={discordPreviewData.artworkSrc}
+                          alt=""
+                          decoding="sync"
+                          fetchPriority="high"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : discordPreviewData.artworkSrc === "wisewave_logo" ? (
+                        <img className="discord-art" src={appIcon} alt="" decoding="sync" fetchPriority="high" />
+                      ) : (
+                        <div className="discord-placeholder">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M9 18V5l12-2v13" />
+                            <circle cx="6" cy="18" r="3" />
+                            <circle cx="18" cy="16" r="3" />
+                          </svg>
+                        </div>
                       )}
                       <div className="discord-details">
-                        {discordPreviewData.titleText !== null && (
-                          <div className="discord-track">{track ? discordPreviewData.titleText : "Nothing playing"}</div>
-                        )}
-                        {track && discordPreviewData.artistText !== null && (
+                        <div className="discord-track">{discordPreviewData.titleText}</div>
+                        {discordPreviewData.artistText && (
                           <div className="discord-artist">{discordPreviewData.artistText}</div>
-                        )}
-                        {track && discordPreviewData.albumText !== null && (
-                          <div className="discord-album">{discordPreviewData.albumText}</div>
                         )}
                         {track && (
                           <div className="discord-progress">
@@ -833,6 +914,52 @@ export function Settings({
         )}
       </main>
       </div>
+      {progressPickerOpen && (
+        <div
+          className={`settings-progress-picker${progressPickerClosing ? " closing" : ""}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="progress-style-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeProgressPicker();
+          }}
+        >
+          <div className="settings-progress-panel">
+            <header>
+              <div>
+                <h2 id="progress-style-title">Progress style</h2>
+                <p>Choose your player timeline</p>
+              </div>
+              <button type="button" autoFocus aria-label="Close progress style picker" onClick={closeProgressPicker}>
+                <X size={18} />
+              </button>
+            </header>
+            <div className="settings-progress-grid">
+              {PROGRESS_STYLES.map((option) => {
+                const selected = readProgressStyle(st.progressStyle) === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`settings-progress-card${selected ? " is-selected" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      updateSetting("progressStyle", option as ProgressStyle);
+                      closeProgressPicker();
+                    }}
+                  >
+                    <span className="settings-progress-card-preview">
+                      <ProgressStylePreview style={option} playing={!st.motion} />
+                      {selected && <Check size={18} className="settings-progress-check" aria-hidden="true" />}
+                    </span>
+                    <span className="settings-progress-card-label">{option}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
       <PlayerAlert message={note} onDismiss={dismissNote} />
     </div>
     </div>
