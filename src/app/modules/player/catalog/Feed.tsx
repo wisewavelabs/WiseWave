@@ -121,7 +121,7 @@ function Rows({
       setFade({ left: false, right: false });
       return;
     }
-    const update = () => setFade({ left: row.scrollLeft > 1, right: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
+    const update = () => setFade((previous) => { const left = row.scrollLeft > 1; const right = row.scrollLeft + row.clientWidth < row.scrollWidth - 1; return previous.left === left && previous.right === right ? previous : { left, right }; });
     const observer = new ResizeObserver(update);
     observer.observe(row);
     row.addEventListener("scroll", update, { passive: true });
@@ -214,7 +214,7 @@ function QuickPicks({
   useEffect(() => {
     const row = rowRef.current;
     if (!row) { setAvailable({ left: false, right: false }); return; }
-    const update = () => setAvailable({ left: row.scrollLeft > 1, right: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
+    const update = () => setAvailable((previous) => { const left = row.scrollLeft > 1; const right = row.scrollLeft + row.clientWidth < row.scrollWidth - 1; return previous.left === left && previous.right === right ? previous : { left, right }; });
     const observer = new ResizeObserver(update);
     observer.observe(row);
     row.addEventListener("scroll", update, { passive: true });
@@ -326,7 +326,7 @@ function FeedSection({ title, description, count, children, empty, onNearEnd, no
     const row = rowRef.current;
     if (!row) { setAvailable({ left: false, right: false }); return; }
     const update = () => {
-      if (!noNav) setAvailable({ left: row.scrollLeft > 1, right: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
+      if (!noNav) setAvailable((previous) => { const left = row.scrollLeft > 1; const right = row.scrollLeft + row.clientWidth < row.scrollWidth - 1; return previous.left === left && previous.right === right ? previous : { left, right }; });
       if (onNearEnd && row.scrollLeft + row.clientWidth >= row.scrollWidth - 600) {
         onNearEnd();
       }

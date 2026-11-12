@@ -78,7 +78,7 @@ export const lyricStyles = css`
         var(--am-lyrics-instrumental-height) +
           var(--am-lyrics-instrumental-spacing)
       );
-    padding-block-start: 62cqh;
+    padding-block-start: var(--lyrics-focus-y, 62cqh);
     -webkit-overflow-scrolling: touch;
     -webkit-touch-callout: none;
     -webkit-user-select: none;

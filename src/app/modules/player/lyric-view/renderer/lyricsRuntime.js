@@ -3744,7 +3744,7 @@ class LyricsRuntime extends ReactiveElement {
         offsetAdjustment = backgroundElement.clientHeight / 2;
       }
       const top =
-        lineTop - containerHeight * 0.62 + lineHeight / 2 - offsetAdjustment;
+        lineTop - (this.focusPosition ?? containerHeight * 0.62) + lineHeight / 2 - offsetAdjustment;
       requestAnimationFrame(() => {
         this.isProgrammaticScroll = true;
         this.lyricsContainer?.scrollTo({
@@ -3782,7 +3782,7 @@ class LyricsRuntime extends ReactiveElement {
     if (!this.lyricsContainer) return 0;
     const vocal = line?.querySelector(".main-vocal-container");
     const height = vocal?.offsetHeight ?? line?.offsetHeight ?? 0;
-      return this.lyricsContainer.clientHeight * 0.62 - height / 2 - (vocal?.offsetTop ?? 0);
+    return (this.focusPosition ?? this.lyricsContainer.clientHeight * 0.62) - height / 2 - (vocal?.offsetTop ?? 0);
   }
   cancelLineScrollAnimation() {
     this.lineSprings.forEach((spring, line) => {

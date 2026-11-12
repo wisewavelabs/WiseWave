@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useLayoutEffect, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ListPlus, Pencil, Play, Trash2 } from "lucide-react";
 import type { Playlist } from "./useLibrary";
@@ -31,14 +31,14 @@ export function PlaylistMenuProvider({ children, playlists, onPlay, onQueue, onE
     setMenu(null);
     if (restore) previousFocus.current?.focus();
   };
-  const open: OpenMenu = (event, item) => {
+  const open = useCallback<OpenMenu>((event, item) => {
     event.preventDefault();
     event.stopPropagation();
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const bounds = event.currentTarget.getBoundingClientRect();
     const anchored = event.type === "click" || (!event.clientX && !event.clientY);
     setMenu({ id: item.id, x: anchored ? bounds.left : event.clientX, y: anchored ? bounds.bottom : event.clientY });
-  };
+  }, []);
 
   useLayoutEffect(() => {
     if (!menu || !root.current) return;

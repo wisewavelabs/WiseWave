@@ -412,7 +412,7 @@ export function HomeHeroCarousel({
   useEffect(() => {
     if (reduceMotion || n < 2) return;
     const timer = window.setInterval(() => {
-      if (performance.now() < autoPauseUntil.current || drag.current.moved) return;
+      if (document.hidden || !rootRef.current?.checkVisibility() || performance.now() < autoPauseUntil.current || drag.current.moved) return;
       goTo(targetRef.current + 1);
     }, AUTO_MS);
     return () => window.clearInterval(timer);

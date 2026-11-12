@@ -28,6 +28,7 @@ interface RendererLine {
 }
 
 interface LyricsElement extends HTMLElement {
+  focusPosition?: number;
   currentTime: number;
   reducedMotion: boolean;
   updateComplete: Promise<boolean>;
@@ -164,7 +165,7 @@ export default function NativeLyricsRenderer({
   useEffect(() => {
     let disposed = false;
     let frame = 0;
-    let wasAdvancing = false;
+    let wasAdvancing: boolean | undefined;
     let element: LyricsElement | undefined;
     let focusIndex = "";
 
@@ -204,7 +205,7 @@ export default function NativeLyricsRenderer({
       if (clock.isReady()) element.currentTime = clock.read();
       updateFocus();
       const advancing = clock.isAdvancing();
-      if (advancing !== wasAdvancing || !advancing) updateWordPlayback(advancing);
+      if (advancing !== wasAdvancing) updateWordPlayback(advancing);
       wasAdvancing = advancing;
       if (advancing) frame = requestAnimationFrame(tick);
     };
@@ -251,6 +252,8 @@ export default function NativeLyricsRenderer({
         const renderer = document.createElement("wisewave-lyrics") as LyricsElement;
         element = renderer;
         rendererRef.current = renderer;
+        const focusPosition = Number.parseFloat(getComputedStyle(hostRef.current).getPropertyValue("--lyrics-focus-y"));
+        if (Number.isFinite(focusPosition)) renderer.focusPosition = focusPosition;
 
         Object.assign(renderer, {
           reducedMotion: document.documentElement.dataset.motion === "reduce",
@@ -278,7 +281,7 @@ export default function NativeLyricsRenderer({
 
         const style = document.createElement("style");
         style.textContent =
-          ".lyrics-footer>.footer-content{display:none}.lyrics-footer{visibility:visible;pointer-events:auto;filter:none!important;opacity:1!important}.lyrics-credit{font:500 13px/1.6 sans-serif;color:#ffffffa6}.lyrics-credit a{color:inherit;text-decoration:underline;text-underline-offset:3px}:host .lyrics-container{height:100%;max-height:100%;background:transparent;--lyplus-font-size-base:var(--lyrics-font-size,40px);--lyplus-padding-line:0px;--am-lyrics-inline-padding:40px;--am-lyrics-line-spacing:38px;--am-lyrics-line-height:1.2}";
+          ".lyrics-footer>.footer-content{display:none}.lyrics-footer{visibility:visible;pointer-events:auto;filter:none!important;opacity:1!important}.lyrics-credit{font:500 13px/1.6 sans-serif;color:#ffffffa6}.lyrics-credit a{color:inherit;text-decoration:underline;text-underline-offset:3px}:host .lyrics-container{height:100%;max-height:100%;background:transparent;--lyplus-font-size-base:var(--lyrics-font-size,40px);--lyplus-padding-line:0px;--am-lyrics-inline-padding:var(--lyrics-inline-padding,40px);--am-lyrics-line-spacing:38px;--am-lyrics-line-height:1.2}";
         renderer.shadowRoot?.append(style);
         setFooter(renderer.shadowRoot?.querySelector<HTMLElement>(".lyrics-footer") || null);
 
