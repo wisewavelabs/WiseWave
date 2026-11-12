@@ -12,6 +12,6 @@ export default defineConfig({
   buildCommand: "npm run build:web",
   frontendDist: "dist",
   windows: {
-    installerInclude: "build/installer.nsh",
+    installerInclude: "resources/installer.nsh",
   },
 });
