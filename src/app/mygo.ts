@@ -62,7 +62,6 @@ export interface DiscordState {
   title: string;
   artist: string;
   artist_id: string;
-  album: string;
   artwork_url: string;
   position: number;
   duration: number;
@@ -81,6 +80,19 @@ export interface Line {
   end_time_ms: number;
   text: string;
   syllables?: Syllable[];
+}
+
+export interface MediaSessionState {
+  track_id: string;
+  title: string;
+  artist: string;
+  album: string;
+  artwork_url: string;
+  position: number;
+  duration: number;
+  playing: boolean;
+  can_next: boolean;
+  can_previous: boolean;
 }
 
 export interface MusicItem {
@@ -263,6 +275,9 @@ export const Playback = {
   setEqualizer(preset: string): Promise<void> {
     return call("Playback.SetEqualizer", preset);
   },
+  setEqualizerBands(enabled: boolean, gains: number[]): Promise<void> {
+    return call("Playback.SetEqualizerBands", enabled, gains);
+  },
   setNormalize(enable: boolean): Promise<void> {
     return call("Playback.SetNormalize", enable);
   },
@@ -287,11 +302,17 @@ export const TrayControl = {
   setStartup(enabled: boolean): Promise<void> {
     return call("TrayControl.SetStartup", enabled);
   },
+  setStartupMode(mode: string): Promise<void> {
+    return call("TrayControl.SetStartupMode", mode);
+  },
   setWindowPreferences(minimizeToTray: boolean, miniWhenMinimized: boolean): Promise<void> {
     return call("TrayControl.SetWindowPreferences", minimizeToTray, miniWhenMinimized);
   },
   startupEnabled(): Promise<boolean> {
     return call("TrayControl.StartupEnabled");
+  },
+  startupMode(): Promise<string> {
+    return call("TrayControl.StartupMode");
   },
   state(): Promise<TrayState> {
     return call("TrayControl.State");
@@ -325,6 +346,15 @@ export const Discord = {
   },
 } as const;
 
+export const MediaSession = {
+  clear(): Promise<void> {
+    return call("MediaSession.Clear");
+  },
+  update(state: MediaSessionState): Promise<void> {
+    return call("MediaSession.Update", state);
+  },
+} as const;
+
 export const Clipboard = {
   writeText(text: string): Promise<void> {
     return call("Clipboard.WriteText", text);
@@ -341,5 +371,6 @@ export const HistoryExport = {
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
+  mediaAction: event<string>("media-action"),
   trayAction: event<string>("tray-action"),
 } as const;

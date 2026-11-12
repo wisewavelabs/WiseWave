@@ -10,6 +10,7 @@ import (
 )
 
 func Run(icon []byte) {
+	initAppIdentity()
 	mygo.App.SetName("WiseWave")
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
@@ -33,7 +34,8 @@ func Run(icon []byte) {
 	mini := &MiniWindow{}
 	trayControl.minimizeToTray.Store(true)
 	discord := desktop.NewDiscord()
-	mygo.Bind(music, playback, trayControl, mini, discord, &Clipboard{}, &HistoryExport{})
+	mediaSession := desktop.NewMediaSession(playback)
+	mygo.Bind(music, playback, trayControl, mini, discord, mediaSession, &Clipboard{}, &HistoryExport{})
 	if err := mygo.Protocol.Handle("audio", desktop.Audio{Music: music}); err != nil {
 		log.Fatal(err)
 	}
@@ -44,6 +46,7 @@ func Run(icon []byte) {
 			page.DevTools = mygo.DevToolsDisabled
 			page.PreloadScript = `window.addEventListener("contextmenu", event => event.preventDefault(), true);`
 		}
+		startMinimized := mygo.App.WasOpenedAtLogin() && startupMinimized()
 		window := mygo.NewWindow(mygo.WindowOptions{
 			Title:           "WiseWave",
 			Width:           1180,
@@ -51,6 +54,7 @@ func Run(icon []byte) {
 			MinWidth:        900,
 			MinHeight:       600,
 			Maximized:       true,
+			Hidden:          startMinimized,
 			URL:             "/",
 			BackgroundColor: "#111113",
 			TitleBarStyle:   mygo.TitleBarHidden,
@@ -112,9 +116,13 @@ func Run(icon []byte) {
 		})
 		if err != nil {
 			log.Printf("system tray unavailable: %v", err)
+			window.Show()
 			return
 		}
 		trayControl.tray = tray
+		if startMinimized {
+			window.Minimize()
+		}
 		tray.OnClick(show)
 		tray.OnRightClick(func() {
 			if err := showTrayMenu(trayControl); err != nil {
