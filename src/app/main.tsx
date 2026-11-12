@@ -4,6 +4,8 @@ import { MiniPlayer } from "./modules/player/mini/MiniPlayer";
 import { Player } from "./modules/player/Player";
 import splashLogo from "../../resources/splash.svg";
 import staticLogo from "../../resources/icon.png";
+import { readZoom, setZoom, stepZoom, syncZoom } from "./shared/zoom";
+import { SnackbarProvider } from "./shared/ui/Snackbar";
 import "./styles.css";
 
 try {
@@ -15,11 +17,7 @@ try {
   }
 } catch {}
 
-const zoomLevels = [0.8, 0.9, 1, 1.1, 1.2, 1.3];
-try {
-  const savedZoom = Number(localStorage.getItem("wisewave-zoom"));
-  if (zoomLevels.includes(savedZoom)) document.documentElement.style.zoom = String(savedZoom);
-} catch {}
+document.documentElement.style.zoom = String(readZoom());
 
 document.addEventListener("keydown", (event) => {
   if (!event.ctrlKey || event.metaKey || event.altKey) return;
@@ -30,17 +28,25 @@ document.addEventListener("keydown", (event) => {
   if (!increase && !decrease && !reset) return;
 
   event.preventDefault();
-  let current = 1;
-  try {
-    const savedZoom = Number(localStorage.getItem("wisewave-zoom"));
-    if (zoomLevels.includes(savedZoom)) current = savedZoom;
-  } catch {}
-
-  const index = zoomLevels.indexOf(current);
-  const next = reset ? 1 : zoomLevels[Math.max(0, Math.min(zoomLevels.length - 1, index + (increase ? 1 : -1)))];
-  document.documentElement.style.zoom = String(next);
-  try { localStorage.setItem("wisewave-zoom", String(next)); } catch {}
+  if (reset) setZoom(1);
+  else stepZoom(increase ? 1 : -1);
 }, true);
+
+let wheelZoomDelta = 0;
+let wheelZoomTimer = 0;
+document.addEventListener("wheel", (event) => {
+  if (!event.ctrlKey || event.metaKey || event.altKey) return;
+  event.preventDefault();
+  window.clearTimeout(wheelZoomTimer);
+  wheelZoomTimer = window.setTimeout(() => { wheelZoomDelta = 0; }, 250);
+  if (Math.sign(wheelZoomDelta) !== Math.sign(event.deltaY)) wheelZoomDelta = 0;
+  wheelZoomDelta += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1);
+  if (Math.abs(wheelZoomDelta) >= 80) {
+    stepZoom(wheelZoomDelta < 0 ? 1 : -1);
+    wheelZoomDelta = 0;
+  }
+}, { passive: false, capture: true });
+window.addEventListener("storage", (event) => { if (event.key === "wisewave-zoom") syncZoom(event.newValue); });
 
 function App() {
   const [splash, setSplash] = useState<"visible" | "exiting" | "done">("visible");
@@ -68,4 +74,4 @@ window.addEventListener("contextmenu", (event) => {
   event.preventDefault();
 });
 
-createRoot(document.getElementById("root")!).render(new URLSearchParams(window.location.search).get("view") === "mini" ? <MiniPlayer /> : <App />);
+createRoot(document.getElementById("root")!).render(<SnackbarProvider>{new URLSearchParams(window.location.search).get("view") === "mini" ? <MiniPlayer /> : <App />}</SnackbarProvider>);
