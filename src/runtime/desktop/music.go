@@ -345,6 +345,32 @@ func (m *Music) Lyrics(title, artist, album string, duration int, id string) (*l
 	return result, nil
 }
 
+type CanvasResult struct {
+	URL string `json:"url"`
+}
+
+func (m *Music) Canvas(title, artist string, duration int, id string) (*CanvasResult, error) {
+	title = strings.TrimSpace(title)
+	artist = strings.TrimSpace(artist)
+	if title == "" || len(title) > 1024 || len(artist) > 1024 || duration < 0 || duration > 86400 {
+		return nil, errors.New("Invalid track")
+	}
+	if strings.HasPrefix(id, "spotify:") || spotifyTrackID.MatchString(strings.TrimPrefix(id, "spotify:track:")) {
+		trackID := strings.TrimPrefix(id, "spotify:track:")
+		trackID = strings.TrimPrefix(trackID, "spotify:")
+		canvas, err := m.spotify.GetCanvas(trackID)
+		if err != nil || canvas == nil || canvas.URL == "" {
+			return nil, errors.New("Canvas unavailable")
+		}
+		return &CanvasResult{URL: canvas.URL}, nil
+	}
+	canvas, err := m.spotify.ResolveCanvas(title, artist, duration)
+	if err != nil || canvas == nil || canvas.URL == "" {
+		return nil, errors.New("Canvas unavailable")
+	}
+	return &CanvasResult{URL: canvas.URL}, nil
+}
+
 func (m *Music) SponsorSegments(id string) ([]innertube.SponsorSegment, error) {
 	if !videoID.MatchString(id) {
 		return nil, errors.New("Invalid track")

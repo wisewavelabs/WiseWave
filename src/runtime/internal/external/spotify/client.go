@@ -85,10 +85,12 @@ var (
 )
 
 type Client struct {
-	httpClient *http.Client
-	mu         sync.Mutex
-	tokenValue string
-	tokenExpMs int64
+	httpClient       *http.Client
+	mu               sync.Mutex
+	tokenValue       string
+	tokenExpMs       int64
+	clientToken      string
+	clientTokenExpMs int64
 }
 
 func NewClient() *Client {
