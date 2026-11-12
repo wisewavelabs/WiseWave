@@ -19,14 +19,21 @@ export function MarqueeText({ children, className = "", title, speed }: MarqueeT
     const content = contentRef.current;
     if (!viewport || !content) return;
 
-    const measure = () => setOverflow(Math.max(0, content.scrollWidth - viewport.clientWidth));
+    const measure = () => {
+      const next = Math.max(0, Math.ceil(content.scrollWidth - viewport.clientWidth));
+      setOverflow((prev) => (prev === next ? prev : next));
+    };
+
     const observer = new ResizeObserver(measure);
     observer.observe(viewport);
     observer.observe(content);
+    if (viewport.parentElement) observer.observe(viewport.parentElement);
     measure();
+    const fonts = document.fonts;
+    fonts?.ready.then(measure).catch(() => {});
 
     return () => observer.disconnect();
-  }, [children, overflow > 1]);
+  }, [children]);
 
   const duration = speed ? Math.max(6, 3 + overflow / speed) : Math.min(36, Math.max(18, 15 + overflow / 12));
   const autoTitle = title ?? (typeof children === "string" ? children : undefined);
