@@ -1,16 +1,60 @@
 import { Classic } from "../../../shared/ui/Classic";
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ChevronLeft, ChevronRight, Clock3, History, ListPlus, Play, Search, Shuffle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { ChevronLeft, ChevronRight, Clock3, Compass, History, ListPlus, MoreVertical, Play, Radio, Search, Shuffle } from "lucide-react";
 import { Music, type CatalogAlbum, type CatalogArtist, type CatalogPlaylist, type Track } from "../../../mygo";
 import { SearchResults, type SearchCategory } from "../search/SearchResults";
-import { Artwork, artworkURL, hasArtworkURL } from "../../../shared/ui/Artwork";
+import { Artwork, artworkURL, hasArtworkURL, preloadArtworkSource } from "../../../shared/ui/Artwork";
+import { PlayingSpectrum } from "../../../shared/ui/PlayingSpectrum";
+import { HomeHeroCarousel } from "./HomeHeroCarousel";
 import type { Playlist } from "../library/useLibrary";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { ArtistLinks } from "../shared/ArtistLinks";
 import { MarqueeText } from "../../../shared/ui/MarqueeText";
-import { useArtworkTheme } from "../shared/artworkColor";
+import { extractArtworkTheme, useArtworkTheme } from "../shared/artworkColor";
 import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
+import { PlayerAlert } from "../shared/PlayerAlert";
+
+const MORNING_GREETINGS = [
+  "Hey, good morning.",
+  "Sleep well?",
+  "Look who's awake.",
+  "Morning, sleepyhead.",
+  "What's on your mind?",
+  "A little music to wake up?",
+];
+
+const AFTERNOON_GREETINGS = [
+  "Hey, you’re back.",
+  "How's your day been?",
+  "Missed your music?",
+  "Taking a little break?",
+  "There you are.",
+  "What are you in the mood for?",
+];
+
+const EVENING_GREETINGS = [
+  "Hey, how was your day?",
+  "You made it through today.",
+  "Still awake?",
+  "A little time for yourself?",
+  "It's been a long day, huh?",
+  "Stay for a song or two?",
+];
+
+function homeGreeting(now = new Date()) {
+  const hour = now.getHours();
+  const greetings =
+    hour >= 5 && hour < 12 ? MORNING_GREETINGS
+      : hour >= 12 && hour < 17 ? AFTERNOON_GREETINGS
+        : EVENING_GREETINGS;
+  const day = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000);
+  return greetings[(day - 1 + greetings.length) % greetings.length];
+}
+
+function homeDateLabel(now = new Date()) {
+  return now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
 
 function Rows({
   tracks,
@@ -26,6 +70,8 @@ function Rows({
   onAdd,
   extra,
   onRemoveTrack,
+  edgeFade,
+  playing = false,
 }: {
   liked: Track[];
   playlists: Playlist[];
@@ -40,9 +86,12 @@ function Rows({
   rowRef?: RefObject<HTMLDivElement | null>;
   extra?: ReactNode;
   onRemoveTrack?: (id: string) => void;
+  edgeFade?: boolean;
+  playing?: boolean;
 }) {
   const openSongMenu = useSongMenu();
   const [failedIds, setFailedIds] = useState<Set<string>>(() => new Set());
+  const [fade, setFade] = useState({ left: false, right: false });
   const handleFail = useCallback((trackId: string) => {
     setFailedIds((prev) => new Set(prev).add(trackId));
     onRemoveTrack?.(trackId);
@@ -62,11 +111,38 @@ function Rows({
 
   const validTracks = tracks.filter((track) => track && track.id && hasArtworkURL(track.album_art_url) && !failedIds.has(track.id));
 
+  useEffect(() => {
+    if (!edgeFade) {
+      setFade({ left: false, right: false });
+      return;
+    }
+    const row = rowRef?.current;
+    if (!row) {
+      setFade({ left: false, right: false });
+      return;
+    }
+    const update = () => setFade({ left: row.scrollLeft > 1, right: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
+    const observer = new ResizeObserver(update);
+    observer.observe(row);
+    row.addEventListener("scroll", update, { passive: true });
+    update();
+    return () => {
+      observer.disconnect();
+      row.removeEventListener("scroll", update);
+    };
+  }, [edgeFade, rowRef, validTracks.length]);
+
   return (
-    <div className="track-row" ref={rowRef}>
+    <div className={edgeFade ? `track-row track-row-fade${fade.left ? " fade-left" : ""}${fade.right ? " fade-right" : ""}` : "track-row"} ref={rowRef}>
       {validTracks.map((track) => (
         <article className="track-card" key={track.id}>
-          <div className="track-art-wrap">
+          <div
+            className="track-art-wrap"
+            onPointerLeave={(event) => {
+              const focused = document.activeElement;
+              if (focused instanceof HTMLElement && event.currentTarget.contains(focused)) focused.blur();
+            }}
+          >
             <Artwork
               className="track-art"
               src={track.album_art_url}
@@ -74,6 +150,7 @@ function Rows({
               lazy
               onFail={() => handleFail(track.id)}
             />
+            <PlayingSpectrum active={current?.id === track.id} playing={playing} size={32} placement="corner" />
             <Tooltip className="card-queue" label={current ? "Add to queue" : "Play now"}>
               <button
                 className="card-action"
@@ -108,15 +185,148 @@ function Rows({
   );
 }
 
-function FeedSection({ title, description, count, children, empty, onNearEnd, noNav }: { title: string; description: string; count: number; children: (ref: RefObject<HTMLDivElement | null>) => ReactNode; empty: ReactNode; onNearEnd?: () => void; noNav?: boolean }) {
+function chunkTracks(tracks: Track[], size: number) {
+  const chunks: Track[][] = [];
+  for (let index = 0; index < tracks.length; index += size) chunks.push(tracks.slice(index, index + size));
+  return chunks;
+}
+
+function QuickPicks({
+  tracks,
+  onPlay,
+  onArtist,
+  current,
+  playing = false,
+}: {
+  tracks: Track[];
+  onPlay: (track: Track, queue: Track[]) => void;
+  onArtist: (track: Track) => void;
+  current: Track | null;
+  playing?: boolean;
+}) {
+  const openSongMenu = useSongMenu();
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [available, setAvailable] = useState({ left: false, right: false });
+  const [failedIds, setFailedIds] = useState<Set<string>>(() => new Set());
+  const validTracks = tracks.filter((track) => track?.id && hasArtworkURL(track.album_art_url) && !failedIds.has(track.id));
+  const columns = chunkTracks(validTracks, 3);
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) { setAvailable({ left: false, right: false }); return; }
+    const update = () => setAvailable({ left: row.scrollLeft > 1, right: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
+    const observer = new ResizeObserver(update);
+    observer.observe(row);
+    row.addEventListener("scroll", update, { passive: true });
+    update();
+    return () => { observer.disconnect(); row.removeEventListener("scroll", update); };
+  }, [validTracks.length]);
+
+  const scroll = (direction: number) => rowRef.current?.scrollBy({ left: direction * rowRef.current.clientWidth * 0.8, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+
+  return (
+    <section className="feed quick-picks">
+      <div className="feed-heading">
+        <div className="feed-heading-copy">
+          <h2>For You</h2>
+          <span>More of what you love</span>
+        </div>
+        <div className="quick-picks-controls">
+          <button className="quick-picks-play" type="button" disabled={!validTracks.length} onClick={() => { if (validTracks[0]) onPlay(validTracks[0], validTracks); }}>
+            <Play size={16} fill="currentColor" />
+            Play all
+          </button>
+          <div className="row-navigation">
+            <button type="button" aria-label="Scroll For You left" disabled={!available.left} onClick={() => scroll(-1)}><ChevronLeft size={20} /></button>
+            <button type="button" aria-label="Scroll For You right" disabled={!available.right} onClick={() => scroll(1)}><ChevronRight size={20} /></button>
+          </div>
+        </div>
+      </div>
+      {validTracks.length ? (
+        <div className={`quick-picks-row${available.left ? " fade-left" : ""}${available.right ? " fade-right" : ""}`} ref={rowRef}>
+          {columns.map((group, columnIndex) => (
+            <div className="quick-picks-column" key={`for-you-${columnIndex}-${group[0]?.id || columnIndex}`}>
+              {group.map((track) => (
+                <article
+                  className="quick-pick-card"
+                  key={track.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Play ${track.title}`}
+                  onClick={() => onPlay(track, validTracks)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onPlay(track, validTracks);
+                    }
+                  }}
+                  onContextMenu={(event) => openSongMenu(event, track)}
+                >
+                  <span className="quick-pick-art-wrap">
+                    <Artwork className="quick-pick-art" src={track.album_art_url} size={56} lazy onFail={() => setFailedIds((prev) => new Set(prev).add(track.id))} />
+                    <PlayingSpectrum active={current?.id === track.id} playing={playing} size={28} />
+                    <span className="quick-pick-play-overlay" aria-hidden="true">
+                      <Play size={16} fill="currentColor" />
+                    </span>
+                  </span>
+                  <span className="quick-pick-meta">
+                    <button
+                      className="quick-pick-title song-menu-title"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onPlay(track, validTracks);
+                      }}
+                      onContextMenu={(event) => {
+                        event.stopPropagation();
+                        openSongMenu(event, track);
+                      }}
+                    >
+                      <MarqueeText>{track.title}</MarqueeText>
+                    </button>
+                    <span className="quick-pick-artist" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                      <MarqueeText title={track.artist}>
+                        <ArtistLinks track={track} onOpen={onArtist} />
+                      </MarqueeText>
+                    </span>
+                  </span>
+                  <Tooltip label="More">
+                    <button
+                      className="quick-pick-more"
+                      type="button"
+                      aria-label={`More options for ${track.title}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openSongMenu(event, track);
+                      }}
+                    >
+                      <MoreVertical size={18} />
+                    </button>
+                  </Tooltip>
+                </article>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="feed-empty">
+          <Radio size={28} />
+          <strong>No recommendations yet</strong>
+          <span>Listen to or like songs to shape your feed.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FeedSection({ title, description, count, children, empty, onNearEnd, noNav, actions }: { title: string; description: string; count: number; children: (ref: RefObject<HTMLDivElement | null>) => ReactNode; empty: ReactNode; onNearEnd?: () => void; noNav?: boolean; actions?: ReactNode }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState({ left: false, right: false });
   useEffect(() => {
-    if (noNav) return;
     const row = rowRef.current;
     if (!row) { setAvailable({ left: false, right: false }); return; }
     const update = () => {
-      setAvailable({ left: row.scrollLeft > 1, right: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
+      if (!noNav) setAvailable({ left: row.scrollLeft > 1, right: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
       if (onNearEnd && row.scrollLeft + row.clientWidth >= row.scrollWidth - 600) {
         onNearEnd();
       }
@@ -128,10 +338,25 @@ function FeedSection({ title, description, count, children, empty, onNearEnd, no
     return () => { observer.disconnect(); row.removeEventListener("scroll", update); };
   }, [count, onNearEnd, noNav]);
   const scroll = (direction: number) => rowRef.current?.scrollBy({ left: direction * rowRef.current.clientWidth * .8, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  return <section className="feed"><div className="feed-heading"><h2>{title}</h2><div className="row-navigation"><span>{description}</span>{!noNav && (<><button type="button" aria-label={`Scroll ${title} left`} disabled={!available.left} onClick={() => scroll(-1)}><ChevronLeft size={20} /></button><button type="button" aria-label={`Scroll ${title} right`} disabled={!available.right} onClick={() => scroll(1)}><ChevronRight size={20} /></button></>)}</div></div>{count ? children(rowRef) : empty}</section>;
+  return <section className="feed"><div className="feed-heading"><div className="feed-heading-copy"><h2>{title}</h2><span>{description}</span></div>{(actions || !noNav) && <div className="feed-heading-actions">{actions}{!noNav && <div className="row-navigation"><button type="button" aria-label={`Scroll ${title} left`} disabled={!available.left} onClick={() => scroll(-1)}><ChevronLeft size={20} /></button><button type="button" aria-label={`Scroll ${title} right`} disabled={!available.right} onClick={() => scroll(1)}><ChevronRight size={20} /></button></div>}</div>}</div>{count ? children(rowRef) : empty}</section>;
 }
 
 const mixCache = new Map<string, Track[]>();
+const mixRequests = new Map<string, Promise<Track[]>>();
+
+function loadMix(track: Track) {
+  const cached = mixCache.get(track.id);
+  if (cached) return Promise.resolve(cached);
+  const pending = mixRequests.get(track.id);
+  if (pending) return pending;
+  const request = Music.related(track.id).then((tracks) => {
+    const items = [track, ...tracks.filter((item) => item.id !== track.id)];
+    mixCache.set(track.id, items);
+    return items;
+  }).finally(() => mixRequests.delete(track.id));
+  mixRequests.set(track.id, request);
+  return request;
+}
 
 const DISCOVER_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const DISCOVER_STORAGE_KEY = "wisewave-discover-cache";
@@ -194,22 +419,40 @@ function saveDiscoverCache(tracks: Track[], seedIndex: number, timestamp: number
   } catch {}
 }
 
-export function Feed({ history, popular, forYou, searchResults, albumResults = [], artistResults = [], playlistResults = [], searchQuery, searchCategory, onSearchCategory, searchLoading, searchError, onPlay, mix, onMix, onArtist, onAlbum, onPlaylist, onQueue, current, queue, liked, playlists, onLike, onAdd }: { liked: Track[]; playlists: Playlist[]; onLike: (track: Track) => void; onAdd: (id: string, track: Track) => void; onArtist: (track: { artist: string; artist_id?: string }) => void; onAlbum?: (albumId: string) => void; onPlaylist?: (playlistId: string) => void; onQueue: (track: Track) => void; current: Track | null; queue: Track[]; mix: Track | null; onMix: (track: Track | null) => void; history: Track[]; popular: Track[]; forYou: Track[]; searchResults: Track[]; albumResults?: CatalogAlbum[]; artistResults?: CatalogArtist[]; playlistResults?: CatalogPlaylist[]; searchQuery: string; searchCategory: SearchCategory; onSearchCategory: (category: SearchCategory) => void; searchLoading?: boolean; searchError?: string; onPlay: (track: Track, queue: Track[]) => void }) {
+export function Feed({ history, popular, forYou, searchResults, albumResults = [], artistResults = [], playlistResults = [], searchQuery, searchCategory, onSearchCategory, searchLoading, searchError, onPlay, mix, onMix, onArtist, onAlbum, onPlaylist, onQueue, current, queue, liked, playlists, onLike, onAdd, playing = false }: { liked: Track[]; playlists: Playlist[]; onLike: (track: Track) => void; onAdd: (id: string, track: Track) => void; onArtist: (track: { artist: string; artist_id?: string }) => void; onAlbum?: (albumId: string) => void; onPlaylist?: (playlistId: string) => void; onQueue: (track: Track) => void; current: Track | null; queue: Track[]; mix: Track | null; onMix: (track: Track | null) => void; history: Track[]; popular: Track[]; forYou: Track[]; searchResults: Track[]; albumResults?: CatalogAlbum[]; artistResults?: CatalogArtist[]; playlistResults?: CatalogPlaylist[]; searchQuery: string; searchCategory: SearchCategory; onSearchCategory: (category: SearchCategory) => void; searchLoading?: boolean; searchError?: string; onPlay: (track: Track, queue: Track[]) => void; playing?: boolean }) {
   const openSongMenu = useSongMenu();
-  const seeds = Array.from(new Map([...history, ...forYou, ...popular].filter((track) => track.id && hasArtworkURL(track.album_art_url)).map((track) => [track.id, track])).values());
-  const artists = new Set<string>();
-  const uniqueArtistSeeds = seeds.filter((track) => {
-    const artist = track.artist.toLowerCase().trim();
-    if (artists.has(artist)) return false;
-    artists.add(artist);
-    return true;
-  });
-  const mixes = (
-    uniqueArtistSeeds.length >= 8
-      ? uniqueArtistSeeds
-      : [...uniqueArtistSeeds, ...seeds.filter((track) => !uniqueArtistSeeds.some((item) => item.id === track.id))]
-  ).slice(0, 8);
+  const [mixSeedTracks, setMixSeedTracks] = useState<Track[]>(() => history.slice(0, 16));
+  useEffect(() => {
+    setMixSeedTracks(history.slice(0, 16));
+  }, [forYou]);
+  const mixes = useMemo(() => {
+    const seeds = Array.from(new Map([...mixSeedTracks, ...forYou, ...popular].filter((track) => track.id && hasArtworkURL(track.album_art_url)).map((track) => [track.id, track])).values());
+    const artists = new Set<string>();
+    const unique = seeds.filter((track) => {
+      const artist = track.artist.toLowerCase().trim();
+      if (artists.has(artist)) return false;
+      artists.add(artist);
+      return true;
+    });
+    const ids = new Set(unique.map((track) => track.id));
+    return (unique.length >= 16 ? unique : [...unique, ...seeds.filter((track) => !ids.has(track.id))]).slice(0, 16);
+  }, [mixSeedTracks, forYou, popular]);
   const [failedMixIds, setFailedMixIds] = useState<Set<string>>(() => new Set());
+  const mixArtworkUrls = mixes.map((track) => artworkURL(track.album_art_url, 256)).filter(Boolean).join("\n");
+
+  useEffect(() => {
+    let active = true;
+    const urls = mixArtworkUrls.split("\n").filter(Boolean);
+    let index = 0;
+    const warm = async () => {
+      while (active && index < urls.length) {
+        const url = urls[index++];
+        await extractArtworkTheme(url);
+      }
+    };
+    const timer = window.setTimeout(() => { void warm(); void warm(); }, 500);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [mixArtworkUrls]);
 
   useEffect(() => {
     const onFailed = (event: Event) => {
@@ -427,15 +670,21 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
 
   useEffect(() => {
     if (!mixes.length) return;
-    mixes.forEach((track) => {
-      if (!mixCache.has(track.id)) {
-        Music.related(track.id).then((tracks) => {
-          if (!mixCache.has(track.id)) {
-            mixCache.set(track.id, [track, ...tracks.filter((t) => t.id !== track.id)]);
-          }
-        }).catch(() => {});
+    let active = true;
+    let index = 0;
+    const warm = async () => {
+      while (active && index < mixes.length) {
+        const track = mixes[index++];
+        try {
+          const items = await loadMix(track);
+          if (active) items.slice(0, 12).forEach((item) => preloadArtworkSource(item.album_art_url, 40));
+        } catch (error) {
+          console.warn("Could not preload daily mix", error);
+        }
       }
-    });
+    };
+    const timer = window.setTimeout(() => { void warm(); void warm(); }, 500);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [mixes.map((m) => m.id).join(",")]);
 
   useEffect(() => {
@@ -450,9 +699,7 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
     let active = true;
     if (mixRetry > 0) mixCache.delete(mix.id);
     setMixTracks([]); setMixError(""); setMixLoading(true); setMixQuery("");
-    Music.related(mix.id).then((tracks) => {
-      const full = [mix, ...tracks.filter((track) => track.id !== mix.id)];
-      mixCache.set(mix.id, full);
+    loadMix(mix).then((full) => {
       if (active) setMixTracks(full);
     }).catch(() => {
       if (active) setMixError("This mix could not be loaded.");
@@ -461,7 +708,7 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
     });
     return () => { active = false; };
   }, [mix, mixRetry]);
-  if (searchQuery) return <SearchResults key={searchQuery} query={searchQuery} category={searchCategory} onCategory={onSearchCategory} loading={searchLoading} error={searchError} tracks={searchResults} albums={albumResults} artists={artistResults} playlists={playlistResults} liked={liked} current={current} onPlay={onPlay} onLike={onLike} onQueue={onQueue} onArtist={onArtist} onAlbum={onAlbum || (() => {})} onPlaylist={onPlaylist || (() => {})} />;
+  if (searchQuery) return <SearchResults key={searchQuery} query={searchQuery} category={searchCategory} onCategory={onSearchCategory} loading={searchLoading} error={searchError} tracks={searchResults} albums={albumResults} artists={artistResults} playlists={playlistResults} liked={liked} current={current} playing={playing} onPlay={onPlay} onLike={onLike} onQueue={onQueue} onArtist={onArtist} onAlbum={onAlbum || (() => {})} onPlaylist={onPlaylist || (() => {})} />;
   if (mix) {
     const visible = mixTracks.filter((track) => `${track.title} ${track.artist}`.toLowerCase().includes(mixQuery.trim().toLowerCase()));
     const shuffle = () => {
@@ -524,8 +771,8 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
           </div>
 
           {mixError ? (
-            <div className="detail-empty" role="alert">
-              <p>{mixError}</p>
+            <div className="detail-empty">
+              <PlayerAlert message={mixError} onDismiss={() => {}} action={{ label: "Retry", onClick: () => setMixRetry((value) => value + 1) }} />
               <button className="artist-secondary" type="button" onClick={() => setMixRetry((value) => value + 1)}>
                 Try again
               </button>
@@ -563,6 +810,7 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
                             size={40}
                             lazy
                           />
+                          <PlayingSpectrum active={current?.id === track.id} playing={playing} size={24} />
                           <span className="song-play-hover-overlay">
                             <Play size={16} fill="#ffffff" />
                           </span>
@@ -579,16 +827,11 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
                           >
                             <MarqueeText>{track.title}</MarqueeText>
                           </button>
-                          <small className="song-sub-label">{track.album || "Daily Mix"}</small>
+                          <small className="song-sub-label">{track.album || "Daily Mix"}<span className="song-compact-artist"> · <ArtistLinks track={track} onOpen={onArtist} /></span></small>
                         </span>
                       </span>
 
-                      <span
-                        className="song-author-cell"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
-                      >
+                      <span className="song-author-cell">
                         <MarqueeText className="song-author-marquee">
                           <ArtistLinks track={track} onOpen={onArtist} />
                         </MarqueeText>
@@ -611,19 +854,49 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
       </div>
     );
   }
+  const heroTracks = Array.from(
+    new Map([...forYou, ...popular, ...history].filter((track) => track?.id && hasArtworkURL(track.album_art_url)).map((track) => [track.id, track])).values(),
+  ).slice(0, 24);
+
   return <>
+    <div className="home-hero-wrap">
+      <header className="home-hero-greeting">
+        <h2 className="home-hero-hello">{homeGreeting()}</h2>
+        <p className="home-hero-date">{homeDateLabel()}</p>
+      </header>
+      <HomeHeroCarousel tracks={heroTracks} onPlay={onPlay} current={current} playing={playing} />
+    </div>
     <FeedSection
       title="Discover"
       description="A mix shaped around your listening"
       count={discoverTracks.length}
       onNearEnd={loadMoreDiscover}
+      actions={
+        <button
+          className="quick-picks-play"
+          type="button"
+          disabled={!discoverTracks.length}
+          onClick={() => {
+            const playable = discoverTracks.filter((track) => track?.id && hasArtworkURL(track.album_art_url));
+            if (playable[0]) onPlay(playable[0], playable);
+          }}
+        >
+          <Play size={16} fill="currentColor" />
+          Play all
+        </button>
+      }
       empty={
         discoverLoading ? (
-          <p className="feed-message" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Classic /> Finding music to discover…
-          </p>
+          <div className="feed-empty" role="status">
+            <Classic />
+            <strong>Finding music to discover…</strong>
+          </div>
         ) : (
-          <p className="feed-message">Play a few songs to help discover your sound.</p>
+          <div className="feed-empty">
+            <Compass size={28} />
+            <strong>Nothing to discover yet</strong>
+            <span>Play a few songs to help discover your sound.</span>
+          </div>
         )
       }
     >
@@ -641,6 +914,8 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
           onPlay={onPlay}
           rowRef={ref}
           onRemoveTrack={removeDiscoverTrack}
+          edgeFade
+          playing={playing}
           extra={
             discoverLoading ? (
               <div
@@ -662,8 +937,25 @@ export function Feed({ history, popular, forYou, searchResults, albumResults = [
         />
       )}
     </FeedSection>
-    <FeedSection title="Recents" description="Your latest listens" count={history.length} empty={<div className="empty"><History size={28} /><strong>Nothing here yet</strong><span>Songs you listen to will show up here.</span></div>}>{(ref) => <Rows liked={liked} playlists={playlists} onLike={onLike} onAdd={onAdd} onArtist={onArtist} onQueue={onQueue} current={current} queue={queue} tracks={history} onPlay={onPlay} rowRef={ref} />}</FeedSection>
-    <FeedSection title="Daily Mix" description="Made for you" count={mixes.length} noNav empty={<p className="feed-message">Listen to a few songs to get your daily mix.</p>}>{() => <div className="daily-mix-grid">{mixes.filter((track) => hasArtworkURL(track.album_art_url) && !failedMixIds.has(track.id)).map((track, index) => <button className="mix-card" key={track.id} type="button" onClick={() => onMix(track)}><Artwork src={track.album_art_url} size={280} lazy onFail={() => setFailedMixIds((prev) => new Set(prev).add(track.id))} /><span>Daily Mix {index + 1}</span></button>)}</div>}</FeedSection>
-    <FeedSection title="For You" description="More of what you love" count={forYou.length} empty={<p className="feed-message">Listen to or like songs to shape your feed.</p>}>{(ref) => <Rows liked={liked} playlists={playlists} onLike={onLike} onAdd={onAdd} onArtist={onArtist} onQueue={onQueue} current={current} queue={queue} tracks={forYou} onPlay={onPlay} rowRef={ref} />}</FeedSection>
+    <FeedSection title="Recents" description="Your latest listens" count={history.length} empty={<div className="feed-empty"><History size={28} /><strong>Nothing here yet</strong><span>Songs you listen to will show up here.</span></div>}>{(ref) => <Rows liked={liked} playlists={playlists} onLike={onLike} onAdd={onAdd} onArtist={onArtist} onQueue={onQueue} current={current} queue={queue} tracks={history} onPlay={onPlay} rowRef={ref} playing={playing} />}</FeedSection>
+    <FeedSection title="Daily Mix" description="A fresh mix of your favorites" count={mixes.length} empty={<div className="feed-empty"><Radio size={28} /><strong>No mixes yet</strong><span>Listen to a few songs to get your daily mix.</span></div>}>{(ref) => {
+      const visibleMixes = mixes.filter((track) => hasArtworkURL(track.album_art_url) && !failedMixIds.has(track.id));
+      const pages = chunkTracks(visibleMixes, 8);
+      return (
+        <div className="daily-mix-row" ref={ref}>
+          {pages.map((page, pageIndex) => (
+            <div className="daily-mix-grid" key={`daily-mix-page-${pageIndex}`}>
+              {page.map((track, index) => (
+                <button className="mix-card" key={track.id} type="button" onClick={() => onMix(track)}>
+                  <Artwork src={track.album_art_url} size={280} lazy onFail={() => setFailedMixIds((prev) => new Set(prev).add(track.id))} />
+                  <span>Daily Mix {pageIndex * 8 + index + 1}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    }}</FeedSection>
+    <QuickPicks tracks={forYou.length ? forYou : popular} onPlay={onPlay} onArtist={onArtist} current={current} playing={playing} />
   </>;
 }
