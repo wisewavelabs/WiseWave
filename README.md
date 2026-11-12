@@ -58,13 +58,13 @@ npm ci
 npx mygo dev
 ```
 
-To build the Windows app and installer:
+To build the Windows app and installer for Intel/AMD and ARM:
 
 ```powershell
-npx mygo build
+npx mygo build -platform windows/amd64,windows/arm64
 ```
 
-Build artifacts are written under `dist/windows-amd64/`.
+Build artifacts are written under `dist/windows-amd64/` and `dist/windows-arm64/`.
 
 ## Thank you to the open source community!!!
 
