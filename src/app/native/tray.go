@@ -11,6 +11,7 @@ import (
 )
 
 var TrayAction = mygo.NewEvent[string]("tray-action")
+var PlayerFullscreenChanged = mygo.NewEvent[bool]("player-fullscreen-changed")
 
 type TrayState struct {
 	HasTrack bool `json:"hasTrack"`
@@ -20,15 +21,17 @@ type TrayState struct {
 }
 
 type TrayControl struct {
-	mu                sync.RWMutex
-	startupMu         sync.Mutex
-	state             TrayState
-	window            *mygo.Window
-	tray              *mygo.Tray
-	quitting          atomic.Bool
-	minimizeToTray    atomic.Bool
-	miniWhenMinimized atomic.Bool
-	autoMini          atomic.Bool
+	mu                 sync.RWMutex
+	startupMu          sync.Mutex
+	state              TrayState
+	window             *mygo.Window
+	tray               *mygo.Tray
+	quitting           atomic.Bool
+	minimizeToTray     atomic.Bool
+	miniWhenMinimized  atomic.Bool
+	autoMini           atomic.Bool
+	playerFullscreen   bool
+	previousFullscreen bool
 }
 
 func (tray *TrayControl) SetWindowPreferences(minimizeToTray, miniWhenMinimized bool) {
@@ -126,6 +129,23 @@ func (tray *TrayControl) State() TrayState {
 	tray.mu.RLock()
 	defer tray.mu.RUnlock()
 	return tray.state
+}
+
+func (tray *TrayControl) SetPlayerFullscreen(enabled bool) error {
+	if tray.window == nil {
+		return errors.New("Window unavailable")
+	}
+	mygo.RunOnMain(func() {
+		if tray.playerFullscreen == enabled {
+			return
+		}
+		if enabled {
+			tray.previousFullscreen = tray.window.IsFullScreen()
+		}
+		tray.playerFullscreen = enabled
+		tray.window.SetFullScreen(enabled || tray.previousFullscreen)
+	})
+	return nil
 }
 
 func (tray *TrayControl) Action(action string) error {

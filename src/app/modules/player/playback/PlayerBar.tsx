@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { PlayerSlider } from "./PlayerSlider";
-import { Heart, ListMusic, Mic2, PictureInPicture2, Play, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Heart, Maximize, ListMusic, Mic2, PictureInPicture2, Play, Volume1, Volume2, VolumeX } from "lucide-react";
 import { ListCollapseIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon, ShuffleIcon } from "../../../shared/ui/icons";
 import { IconButton } from "../../../shared/ui/IconButton";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -30,6 +30,7 @@ export function PlayerBar({
   onMini,
   onArtist,
   onArtwork,
+  onFullscreen,
   liked,
   onLike,
 }: {
@@ -43,6 +44,7 @@ export function PlayerBar({
   onMini: () => void;
   onArtist: (track: Track) => void;
   onArtwork: () => void;
+  onFullscreen: () => void;
   liked?: boolean;
   onLike?: () => void;
 }) {
@@ -468,6 +470,7 @@ export function PlayerBar({
         >
           <PictureInPicture2 size={24} className={miniOpen ? "active-control" : ""} />
         </IconButton>
+        <IconButton label="Full screen player" disabled={!controllable || !music.track} onClick={onFullscreen}><Maximize size={22} /></IconButton>
       </div>
     </footer>
   );

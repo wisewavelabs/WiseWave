@@ -106,6 +106,13 @@ func Run(icon []byte) {
 			centerRestored()
 		})
 		trayControl.window = window
+		window.OnLeaveFullScreen(func() {
+			if trayControl.playerFullscreen {
+				if err := PlayerFullscreenChanged.Emit(window, false); err != nil {
+					log.Printf("leave player full screen: %v", err)
+				}
+			}
+		})
 		show := func() {
 			if err := trayControl.Action("open"); err != nil {
 				log.Printf("show window: %v", err)

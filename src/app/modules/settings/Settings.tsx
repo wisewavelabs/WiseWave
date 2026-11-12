@@ -4,6 +4,7 @@ import { artworkURL } from "../../shared/ui/Artwork";
 import { PlayerAlert } from "../player/shared/PlayerAlert";
 import { AudioLines, BookOpen, Check, ChevronLeft, ChevronRight, CircleHelp, ExternalLink, Code2, Globe, Mic2, Palette, Shield, X } from "lucide-react";
 import appIcon from "../../../../resources/icon.png";
+import echoControlsLicense from "../../../../resources/echo-controls-license.txt?raw";
 import lyricsLicense from "../../../../resources/accompanist-lyrics-license.txt?raw";
 import lyricsNotice from "../../../../resources/accompanist-lyrics-notice.txt?raw";
 import loadingLicense from "../../../../resources/loading-ui-license.txt?raw";
@@ -279,6 +280,7 @@ const LICENSES = [
   { name: "React", license: "MIT", text: reactLicense },
   { name: "React DOM", license: "MIT", text: reactDomLicense },
   { name: "Lucide React", license: "ISC", text: lucideLicense },
+  { name: "Echo Music playback icons", license: "GPL-3.0", text: echoControlsLicense },
   { name: "Lottie Web", license: "MIT", text: lottieLicense },
   { name: "MyGo Runtime", license: "MIT", text: mygoLicense },
   { name: "Accompanist Lyrics UI", license: "Apache 2.0", text: `${lyricsNotice}\n\n${lyricsLicense}` },
