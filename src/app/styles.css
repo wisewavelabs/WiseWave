@@ -8610,7 +8610,17 @@ span.tooltip-trigger.mini-close-wrap {
   }
 }
 
-.artwork[data-loading="true"]::after, .artist-banner-loading::after {
+.artwork[data-loading="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 18%, #ffffff0a 36%, #ffffff29 50%, #ffffff0a 64%, transparent 82%);
+  transform: translateX(-110%);
+  animation: artwork-shimmer 1.55s cubic-bezier(.4, 0, .2, 1) infinite;
+  pointer-events: none;
+}
+
+.artist-banner-loading::after {
   content: "";
   position: absolute;
   inset: 0;
