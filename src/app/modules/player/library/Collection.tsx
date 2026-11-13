@@ -25,7 +25,7 @@ export function Collection({
   kind: "liked" | "playlist";
   playlist?: Playlist;
   tracks: LibraryTrack[];
-  onPlay: (track: Track, tracks: Track[]) => void;
+  onPlay: (track: Track, tracks: Track[], options?: { collection?: boolean }) => void;
   onArtist: (track: Track) => void;
   current?: Track | null;
   playing?: boolean;
@@ -81,12 +81,12 @@ export function Collection({
           )}
           <div className="collection-heading-meta">
             <p className="collection-header-category">Playlist</p>
-            <h1 className="collection-header-title">{name}</h1>
+            <h1 className="collection-header-title"><MarqueeText>{name}</MarqueeText></h1>
             {playlist?.description && (
-              <p className="collection-header-desc">{playlist.description}</p>
+              <p className="collection-header-desc"><MarqueeText>{playlist.description}</MarqueeText></p>
             )}
             <p className="collection-header-stats">
-              {statsLabel}
+              <MarqueeText>{statsLabel}</MarqueeText>
             </p>
           </div>
         </div>
@@ -99,7 +99,7 @@ export function Collection({
             className="collection-play-btn"
             disabled={!tracks.length}
             type="button"
-            onClick={() => visibleSongs.length && onPlay(visibleSongs[0], visibleSongs)}
+            onClick={() => visibleSongs.length && onPlay(visibleSongs[0], visibleSongs, { collection: true })}
           >
             <PlayIcon className="play-icon-glyph" />
           </button>
@@ -135,8 +135,9 @@ export function Collection({
               key={song.id}
               role="button"
               tabIndex={0}
-              onClick={() => onPlay(song, visibleSongs)}
-              onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onPlay(song, visibleSongs); } }}
+              onContextMenu={kind === "liked" ? (event) => openSongMenu(event, song, { kind: "liked" }) : undefined}
+              onClick={() => onPlay(song, visibleSongs, { collection: true })}
+              onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onPlay(song, visibleSongs, { collection: true }); } }}
             >
               <span className="song-index-num">{index + 1}</span>
 
@@ -155,7 +156,7 @@ export function Collection({
                     </span>
                   </span>
                   <span className="song-title-wrapper">
-                    <span className="song-menu-title" onContextMenu={(event) => openSongMenu(event, song, kind === "liked" ? { kind: "liked" } : playlist ? { kind: "playlist", id: playlist.id } : undefined)}><MarqueeText className="song-main-title">{song.title}</MarqueeText></span>
+                    <span className="song-menu-title" onContextMenu={kind === "playlist" ? (event) => openSongMenu(event, song, playlist ? { kind: "playlist", id: playlist.id } : undefined) : undefined}><MarqueeText className="song-main-title">{song.title}</MarqueeText></span>
                     <small className="song-sub-label">
                       {kind === "liked" ? <>Liked song<span className="song-compact-artist"> · <ArtistLinks track={song} onOpen={onArtist} /></span></> : <ArtistLinks track={song} onOpen={onArtist} />}
                     </small>

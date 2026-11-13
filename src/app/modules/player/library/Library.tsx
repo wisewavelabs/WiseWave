@@ -3,6 +3,7 @@ import { ListMusic, Plus, Search } from "lucide-react";
 import type { LibraryTrack, Playlist } from "./useLibrary";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { IconButton } from "../../../shared/ui/IconButton";
+import { MarqueeText } from "../../../shared/ui/MarqueeText";
 import { trackDurationSeconds } from "../shared/trackDuration";
 import { PlaylistDialog } from "./PlaylistDialog";
 import { usePlaylistMenu } from "./PlaylistMenu";
@@ -29,10 +30,13 @@ export function Library({ width, liked, playlists, active, onOpen, onCreate }: {
     <div className="library-liked">
       <button className="library-item" type="button" aria-current={active === "liked" ? "page" : undefined} onClick={() => onOpen("liked")}>
         <LikedSongsCover className="liked-cover" />
-        <span><strong>Liked Songs</strong><small>{tracksMeta(liked)}</small></span>
+        <span className="library-item-copy">
+          <MarqueeText className="library-item-title">Liked Songs</MarqueeText>
+          <MarqueeText className="library-item-meta">{tracksMeta(liked)}</MarqueeText>
+        </span>
       </button>
     </div>
-    <nav className="library-list player-scroll" aria-label="Playlists">{visible.length ? visible.map((playlist) => <button className="library-item" type="button" aria-current={active === playlist.id ? "page" : undefined} key={playlist.id} onContextMenu={(event) => openPlaylistMenu(event, playlist)} onClick={() => onOpen(playlist.id)}><span className="playlist-cover">{playlist.cover ? <img src={playlist.cover} alt="" /> : <ListMusic size={20} />}</span><span><strong>{playlist.name}</strong><small>{tracksMeta(playlist.tracks)}</small></span></button>) : <div className="library-empty"><ListMusic size={24} /><strong>No playlists found</strong><span>{query ? "Try another search." : "Create one to start your collection."}</span></div>}</nav>
+    <nav className="library-list player-scroll" aria-label="Playlists">{visible.length ? visible.map((playlist) => <button className="library-item" type="button" aria-current={active === playlist.id ? "page" : undefined} key={playlist.id} onContextMenu={(event) => openPlaylistMenu(event, playlist)} onClick={() => onOpen(playlist.id)}><span className="playlist-cover">{playlist.cover ? <img src={playlist.cover} alt="" /> : <ListMusic size={20} />}</span><span className="library-item-copy"><MarqueeText className="library-item-title">{playlist.name}</MarqueeText><MarqueeText className="library-item-meta">{tracksMeta(playlist.tracks)}</MarqueeText></span></button>) : <div className="library-empty"><ListMusic size={24} /><strong>No playlists found</strong><span>{query ? "Try another search." : "Create one to start your collection."}</span></div>}</nav>
     {creating && <PlaylistDialog onClose={() => setCreating(false)} onCreate={(name, description, cover) => { onCreate(name, description, cover); setCreating(false); }} />}
 
   </aside>;

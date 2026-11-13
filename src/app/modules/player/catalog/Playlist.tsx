@@ -10,9 +10,10 @@ import { trackDurationLabel } from "../shared/trackDuration";
 import { useSongMenu } from "../shared/SongMenu";
 import { PlayerAlert } from "../shared/PlayerAlert";
 
-export function Playlist({ id, onBack, onPlay, onArtist, current = null, playing = false }: {
-  id: string; onBack: () => void; onPlay: (track: Track, tracks: Track[]) => void; onArtist: (track: Track) => void; current?: Track | null; playing?: boolean;
+export function Playlist({ id, onBack, onPlay: play, onArtist, current = null, playing = false }: {
+  id: string; onBack: () => void; onPlay: (track: Track, tracks: Track[], options?: { collection?: boolean }) => void; onArtist: (track: Track) => void; current?: Track | null; playing?: boolean;
 }) {
+  const onPlay = (track: Track, tracks: Track[]) => play(track, tracks, { collection: true });
   const openSongMenu = useSongMenu();
   const [playlist, setPlaylist] = useState<PlaylistDetail | null>(null);
   const [error, setError] = useState("");

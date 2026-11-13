@@ -180,5 +180,42 @@ export function useLibrary() {
       return changed ? { liked, playlists } : current;
     });
   };
-  return { ...data, error, clearError: () => setError(""), toggleLike, create, add, remove, edit, removePlaylist, ensureDuration };
+  const importSpotify = (payload: { liked: boolean; sourceId: string; title: string; cover?: string; tracks: Track[] }) => {
+    const incoming = (Array.isArray(payload.tracks) ? payload.tracks : [])
+      .filter((track) => track?.id)
+      .map((track) => withLibraryMeta(track));
+    update((current) => {
+      if (payload.liked) {
+        const seen = new Set(current.liked.map((track) => track.id));
+        const updates = new Map(incoming.map((track) => [track.id, track]));
+        const added = incoming.filter((track) => {
+          if (seen.has(track.id)) return false;
+          seen.add(track.id);
+          return true;
+        });
+        const existing = current.liked.map((track) => {
+          const refreshed = updates.get(track.id);
+          return refreshed ? withLibraryMeta({ ...track, ...refreshed }, track.addedAt) : track;
+        });
+        return { ...current, liked: [...added, ...existing] };
+      }
+      const id = `spotify:${payload.sourceId}`;
+      const existing = current.playlists.find((playlist) => playlist.id === id);
+      const playlist: Playlist = {
+        id,
+        name: payload.title || existing?.name || "Imported playlist",
+        description: existing?.description || "Imported from Spotify",
+        cover: payload.cover || existing?.cover,
+        tracks: incoming,
+      };
+      return {
+        ...current,
+        playlists: existing
+          ? current.playlists.map((item) => (item.id === id ? playlist : item))
+          : [playlist, ...current.playlists],
+      };
+    });
+    return incoming.length;
+  };
+  return { ...data, error, clearError: () => setError(""), toggleLike, create, add, remove, edit, removePlaylist, ensureDuration, importSpotify };
 }
