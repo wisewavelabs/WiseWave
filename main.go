@@ -9,7 +9,7 @@ import (
 	"wisewave/src/app/native"
 )
 
-//go:embed resources/icon.png
+//go:embed resources/images/icon.png
 var icon []byte
 
 func main() {
