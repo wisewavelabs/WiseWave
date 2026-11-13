@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Line, Track, Record } from "../../../mygo";
 import type { LyricLine } from "../../../types/lyricRenderer";
+import { artworkURL } from "../../../shared/ui/Artwork";
 import LyricsRenderer from "./LyricsRenderer";
-import { DEFAULT_LYRICS_THEME } from "../shared/artworkColor";
+import { DEFAULT_LYRICS_THEME, useArtworkTheme } from "../shared/artworkColor";
 import { createPlaybackClock, type PlaybackClock } from "./playbackClock";
 import { normalizeLyricLines } from "./lyricLayout";
 
@@ -87,7 +88,20 @@ export function Lyrics({
   );
 
   const unavailable = !loading && !lines.length && !plainText;
-  const theme = DEFAULT_LYRICS_THEME;
+  const dynamicBackground = settings.art !== false;
+  const artworkTheme = useArtworkTheme(track);
+  const theme = dynamicBackground ? artworkTheme : DEFAULT_LYRICS_THEME;
+  const artworkSrc = track?.album_art_url || "";
+  const resolvedBackdrop = dynamicBackground && artworkSrc ? artworkURL(artworkSrc, 160) || artworkSrc : "";
+  const [backdropUrl, setBackdropUrl] = useState(resolvedBackdrop);
+  const [backdropFailed, setBackdropFailed] = useState(false);
+
+  useEffect(() => {
+    setBackdropUrl(resolvedBackdrop);
+    setBackdropFailed(false);
+  }, [resolvedBackdrop, track?.id]);
+
+  const showBlur = Boolean(backdropUrl) && !backdropFailed;
 
   const durationSeconds =
     typeof track?.duration_seconds === "number"
@@ -104,7 +118,7 @@ export function Lyrics({
 
   return (
     <div
-      className="player-lyrics-wrapper"
+      className={`player-lyrics-wrapper${showBlur ? " has-blur-bg" : ""}`}
       style={
         {
           "--lyrics-font-size": `${fontSize}px`,
@@ -113,9 +127,27 @@ export function Lyrics({
           "--lyrics-active-text": theme.activeText,
           "--lyrics-inactive-text": theme.inactiveText,
           "--lyrics-flipbook-fill": theme.flipbookFill,
-        } as React.CSSProperties
+        } as CSSProperties
       }
     >
+      {backdropUrl ? (
+        <img
+          className="player-lyrics-backdrop"
+          src={backdropUrl}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => {
+            if (backdropUrl !== artworkSrc && artworkSrc) {
+              setBackdropUrl(artworkSrc);
+              return;
+            }
+            setBackdropFailed(true);
+          }}
+        />
+      ) : null}
       <LyricsRenderer
         credit={credit}
         activeIndex={-1}
