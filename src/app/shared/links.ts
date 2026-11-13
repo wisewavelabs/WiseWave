@@ -1,6 +1,7 @@
 export const links = {
   site: "https://wisewave.me",
   github: "https://github.com/Fristonn",
+  repo: "https://github.com/Fristonn/WiseWave",
   discord: "https://discord.com/users/1240601660984791040",
   community: "https://discord.gg/xNYnxjE6hS",
   krishna: "https://github.com/752k5",

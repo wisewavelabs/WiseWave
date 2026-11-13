@@ -75,7 +75,7 @@ func (s *SponsorBlockClient) GetSegments(ctx context.Context, videoID string) ([
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "WiseWave/1.0 (github.com/wisewavelabs/WiseWave)")
+	req.Header.Set("User-Agent", "WiseWave/1.0 (github.com/Fristonn/WiseWave)")
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {

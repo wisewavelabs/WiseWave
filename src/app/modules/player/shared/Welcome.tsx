@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Coffee, ExternalLink, Globe, Star, UserRound, X } from "lucide-react";
-import appIcon from "../../../../../resources/icon.png";
+import appIcon from "../../../../../resources/images/icon.png";
 import { appVersion } from "../../../version";
 import { linkLabel, links } from "../../../shared/links";
 
@@ -228,7 +228,7 @@ export function Welcome({ close }: { close: () => void }) {
         </div>
 
         <div className="welcome-actions">
-          <a className="welcome-secondary" href={links.github} target="_blank" rel="noreferrer">
+          <a className="welcome-secondary" href={links.repo} target="_blank" rel="noreferrer">
             <Star size={17} />
             Star on GitHub
           </a>

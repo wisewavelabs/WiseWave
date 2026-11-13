@@ -7,8 +7,8 @@
 **One more song, then we'll sleep.**
 
 
-[![Latest release](https://img.shields.io/github/v/release/wisewavelabs/WiseWave?include_prereleases&style=flat-square&logo=github&label=release&color=8b5cf6)](https://github.com/wisewavelabs/WiseWave/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/wisewavelabs/WiseWave/total?style=flat-square&logo=github&label=downloads&color=2563eb)](https://github.com/wisewavelabs/WiseWave/releases)
+[![Latest release](https://img.shields.io/github/v/release/Fristonn/WiseWave?include_prereleases&style=flat-square&logo=github&label=release&color=8b5cf6)](https://github.com/Fristonn/WiseWave/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Fristonn/WiseWave/total?style=flat-square&logo=github&label=downloads&color=2563eb)](https://github.com/Fristonn/WiseWave/releases)
 ![Windows](resources/assets/windows-platform.svg)
 
 </div>
@@ -19,7 +19,7 @@ i built the windows desktop app with **mygo**, using **go** for its native shell
 
 ## Download
 
-**[Get WiseWave from GitHub Releases](https://github.com/wisewavelabs/WiseWave/releases)**
+**[Get WiseWave from GitHub Releases](https://github.com/Fristonn/WiseWave/releases)**
 
 Release packages and changelogs are published here.
 
