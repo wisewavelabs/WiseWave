@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { MiniPlayer } from "./modules/player/mini/MiniPlayer";
 import { Player } from "./modules/player/Player";
 import splashLogo from "../../resources/splash.svg";
-import staticLogo from "../../resources/icon.png";
+import staticLogo from "../../resources/images/icon.png";
 import { readZoom, setZoom, stepZoom, syncZoom } from "./shared/zoom";
 import { SnackbarProvider } from "./shared/ui/Snackbar";
 import "./styles.css";
