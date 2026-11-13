@@ -4,6 +4,11 @@ import { call, event } from "mygo-runtime";
 
 // ---- Types ----
 
+export interface Activity {
+  days: DayBucket[];
+  hours: HourBucket[];
+}
+
 export interface AlbumDetail {
   id: string;
   title: string;
@@ -61,6 +66,12 @@ export interface CatalogPlaylist {
   artwork_url: string;
 }
 
+export interface DayBucket {
+  date: string;
+  listened_ms: number;
+  plays: number;
+}
+
 export interface DiscordState {
   track_id: string;
   title: string;
@@ -73,6 +84,48 @@ export interface DiscordState {
   playing: boolean;
   button_label?: string;
   button_url?: string;
+}
+
+export interface Heartbeat {
+  attempt_id: string;
+  track_id: string;
+  title: string;
+  artist: string;
+  artist_id: string;
+  album: string;
+  album_id: string;
+  artwork_url: string;
+  listened_ms: number;
+  track_duration_ms: number;
+  started_at_ms: number;
+  private: boolean;
+}
+
+export interface Heatmap {
+  year: number;
+  days: DayBucket[];
+}
+
+export interface HistoryPage {
+  items: Play[];
+  total: number;
+}
+
+export interface HourBucket {
+  hour: number;
+  listened_ms: number;
+  plays: number;
+}
+
+export interface Insight {
+  kind: string;
+  title: string;
+  detail: string;
+  track_id?: string;
+  track_title?: string;
+  artist?: string;
+  artwork_url?: string;
+  value?: number;
 }
 
 export type ItemKind = string;
@@ -122,6 +175,37 @@ export interface MusicSection {
   continuationToken?: string;
 }
 
+export interface Overview {
+  listened_ms: number;
+  plays: number;
+  tracks: number;
+  artists: number;
+  albums: number;
+  completed: number;
+  sessions: number;
+  avg_listened_ms: number;
+}
+
+export interface Play {
+  id: number;
+  attempt_id: string;
+  track_id: string;
+  title: string;
+  artist: string;
+  artist_id: string;
+  album: string;
+  album_id: string;
+  artwork_url: string;
+  started_at_ms: number;
+  ended_at_ms: number;
+  listened_ms: number;
+  track_duration_ms: number;
+  qualified: boolean;
+  completed: boolean;
+  session_id: string;
+  local_date?: string;
+}
+
 export interface PlaybackState {
   track_id: string;
   duration: number;
@@ -165,11 +249,113 @@ export interface Record {
   lines?: Line[];
 }
 
+export interface Rewind {
+  kind: string;
+  year: number;
+  month?: number;
+  label: string;
+  listened_ms: number;
+  plays: number;
+  tracks: number;
+  artists: number;
+  albums: number;
+  completed: number;
+  top_tracks: TopTrack[];
+  top_artists: TopArtist[];
+  top_albums: TopAlbum[];
+  busiest_day?: DayBucket;
+  insights: Insight[];
+}
+
+export interface SessionDetail {
+  session: SessionSummary;
+  plays: Play[];
+}
+
+export interface SessionPage {
+  items: SessionSummary[];
+  total: number;
+}
+
+export interface SessionSummary {
+  id: string;
+  started_at_ms: number;
+  ended_at_ms: number;
+  listened_ms: number;
+  plays: number;
+  tracks: number;
+  local_date?: string;
+}
+
 export interface SponsorSegment {
   category: string;
   actionType: string;
   segment: number[];
   UUID: string;
+}
+
+export interface SpotifyAccountStatus {
+  linked: boolean;
+  display_name: string;
+  image_url: string;
+}
+
+export interface SpotifyImportResult {
+  source_id: string;
+  title: string;
+  cover_url: string;
+  liked: boolean;
+  tracks: Track[];
+  matched: number;
+  failed: number;
+  total: number;
+}
+
+export interface SpotifyImportStatus {
+  phase: string;
+  source_id: string;
+  title: string;
+  done: number;
+  total: number;
+  matched: number;
+  error: string;
+}
+
+export interface SpotifyLibraryPlaylist {
+  id: string;
+  name: string;
+  owner: string;
+  image_url: string;
+  track_count: number;
+}
+
+export interface SpotifyLibrarySnapshot {
+  display_name: string;
+  user_id: string;
+  email: string;
+  image_url: string;
+  product: string;
+  country: string;
+  liked_songs: number;
+  playlist_count: number;
+  playlists: SpotifyLibraryPlaylist[];
+}
+
+export interface SpotifyLoginConnection {
+  status: SpotifyAccountStatus;
+  generation: number;
+}
+
+export interface SpotifySyncStatus {
+  phase: string;
+  label: string;
+  display_name: string;
+  image_url: string;
+  playlists_loaded: number;
+  playlist_total: number;
+  liked_songs: number;
+  error: string;
+  library: SpotifyLibrarySnapshot | null;
 }
 
 export interface Syllable {
@@ -178,6 +364,38 @@ export interface Syllable {
   start_time_ms: number;
   end_time_ms: number;
   text: string;
+}
+
+export interface TopAlbum {
+  album: string;
+  album_id: string;
+  artist: string;
+  artwork_url?: string;
+  listened_ms: number;
+  plays: number;
+  tracks: number;
+}
+
+export interface TopArtist {
+  artist: string;
+  artist_id: string;
+  artwork_url?: string;
+  listened_ms: number;
+  plays: number;
+  tracks: number;
+}
+
+export interface TopTrack {
+  track_id: string;
+  title: string;
+  artist: string;
+  artist_id: string;
+  album: string;
+  album_id: string;
+  artwork_url: string;
+  listened_ms: number;
+  plays: number;
+  completed: number;
 }
 
 export interface Track {
@@ -365,6 +583,105 @@ export const MediaSession = {
   },
 } as const;
 
+export const Listening = {
+  activity(rangeName: string, timezone: string): Promise<Activity> {
+    return call("Listening.Activity", rangeName, timezone);
+  },
+  clear(): Promise<void> {
+    return call("Listening.Clear");
+  },
+  discard(): Promise<void> {
+    return call("Listening.Discard");
+  },
+  finalize(): Promise<void> {
+    return call("Listening.Finalize");
+  },
+  heartbeat(play: Heartbeat): Promise<void> {
+    return call("Listening.Heartbeat", play);
+  },
+  heatmap(year: number, timezone: string): Promise<Heatmap> {
+    return call("Listening.Heatmap", year, timezone);
+  },
+  history(query: string, fromMs: number, toMs: number, timezone: string, limit: number, offset: number): Promise<HistoryPage> {
+    return call("Listening.History", query, fromMs, toMs, timezone, limit, offset);
+  },
+  insights(rangeName: string, timezone: string): Promise<Insight[]> {
+    return call("Listening.Insights", rangeName, timezone);
+  },
+  overview(rangeName: string, timezone: string): Promise<Overview> {
+    return call("Listening.Overview", rangeName, timezone);
+  },
+  rewind(kind: string, year: number, month: number, timezone: string): Promise<Rewind> {
+    return call("Listening.Rewind", kind, year, month, timezone);
+  },
+  session(id: string): Promise<SessionDetail> {
+    return call("Listening.Session", id);
+  },
+  sessions(rangeName: string, timezone: string, limit: number, offset: number): Promise<SessionPage> {
+    return call("Listening.Sessions", rangeName, timezone, limit, offset);
+  },
+  setPrivate(on: boolean): Promise<void> {
+    return call("Listening.SetPrivate", on);
+  },
+  topAlbums(rangeName: string, timezone: string, limit: number, offset: number): Promise<TopAlbum[]> {
+    return call("Listening.TopAlbums", rangeName, timezone, limit, offset);
+  },
+  topArtists(rangeName: string, timezone: string, limit: number, offset: number): Promise<TopArtist[]> {
+    return call("Listening.TopArtists", rangeName, timezone, limit, offset);
+  },
+  topTracks(rangeName: string, timezone: string, limit: number, offset: number): Promise<TopTrack[]> {
+    return call("Listening.TopTracks", rangeName, timezone, limit, offset);
+  },
+} as const;
+
+export const SpotifyAccount = {
+  connect(spDc: string, spKey: string): Promise<SpotifyAccountStatus> {
+    return call("SpotifyAccount.Connect", spDc, spKey);
+  },
+  connectForLogin(spDc: string, spKey: string): Promise<SpotifyLoginConnection> {
+    return call("SpotifyAccount.ConnectForLogin", spDc, spKey);
+  },
+  disconnect(): Promise<void> {
+    return call("SpotifyAccount.Disconnect");
+  },
+  disconnectIf(spDc: string, epoch: number): Promise<boolean> {
+    return call("SpotifyAccount.DisconnectIf", spDc, epoch);
+  },
+  import(sourceID: string): Promise<SpotifyImportResult> {
+    return call("SpotifyAccount.Import", sourceID);
+  },
+  importStatus(): Promise<SpotifyImportStatus> {
+    return call("SpotifyAccount.ImportStatus");
+  },
+  library(): Promise<SpotifyLibrarySnapshot | null> {
+    return call("SpotifyAccount.Library");
+  },
+  status(): Promise<SpotifyAccountStatus> {
+    return call("SpotifyAccount.Status");
+  },
+  syncLibrary(): Promise<SpotifySyncStatus> {
+    return call("SpotifyAccount.SyncLibrary");
+  },
+  syncStatus(): Promise<SpotifySyncStatus> {
+    return call("SpotifyAccount.SyncStatus");
+  },
+} as const;
+
+export const SpotifyLogin = {
+  busy(): Promise<boolean> {
+    return call("SpotifyLogin.Busy");
+  },
+  cancel(): Promise<void> {
+    return call("SpotifyLogin.Cancel");
+  },
+  logout(): Promise<void> {
+    return call("SpotifyLogin.Logout");
+  },
+  start(): Promise<void> {
+    return call("SpotifyLogin.Start");
+  },
+} as const;
+
 export const Clipboard = {
   writeText(text: string): Promise<void> {
     return call("Clipboard.WriteText", text);
@@ -382,6 +699,9 @@ export const HistoryExport = {
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
   mediaAction: event<string>("media-action"),
+  spotifyAccountChanged: event<boolean>("spotify-account-changed"),
+  spotifyLibrarySyncChanged: event<SpotifySyncStatus>("spotify-library-sync-changed"),
+  spotifyImportChanged: event<SpotifyImportStatus>("spotify-import-changed"),
   trayAction: event<string>("tray-action"),
   playerFullscreenChanged: event<boolean>("player-fullscreen-changed"),
 } as const;

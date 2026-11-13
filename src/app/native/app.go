@@ -35,7 +35,11 @@ func Run(icon []byte) {
 	trayControl.minimizeToTray.Store(true)
 	discord := desktop.NewDiscord()
 	mediaSession := desktop.NewMediaSession(playback)
-	mygo.Bind(music, playback, trayControl, mini, discord, mediaSession, &Clipboard{}, &HistoryExport{})
+	listening := desktop.NewListening()
+	spotifyAccount := desktop.NewSpotifyAccount()
+	desktop.WireSpotifySearch(spotifyAccount, music.Search)
+	spotifyLogin := NewSpotifyLogin(spotifyAccount)
+	mygo.Bind(music, playback, trayControl, mini, discord, mediaSession, listening, spotifyAccount, spotifyLogin, &Clipboard{}, &HistoryExport{})
 	if err := mygo.Protocol.Handle("audio", desktop.Audio{Music: music}); err != nil {
 		log.Fatal(err)
 	}
