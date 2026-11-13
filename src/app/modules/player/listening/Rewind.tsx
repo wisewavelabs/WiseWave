@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Track } from "../../../mygo";
 import { Artwork } from "../../../shared/ui/Artwork";
@@ -8,6 +8,7 @@ import { useRewind } from "./useListeningData";
 import type { ListeningRewind, ListeningTopArtist } from "./types";
 
 type Focus = "overview" | "time" | "artist" | "song";
+const firstMonth = 2026 * 12 + 11;
 
 function capsuleMinutes(ms: number) {
   const minutes = Math.max(0, Math.round(ms / 60_000));
@@ -19,6 +20,7 @@ function recentMonths(year: number, month: number, count = 5) {
   let cursor = { year, month };
   for (let index = 0; index < count; index += 1) {
     cursor = shiftMonth(cursor.year, cursor.month, -1);
+    if (cursor.year * 12 + cursor.month < firstMonth) break;
     items.push({
       year: cursor.year,
       month: cursor.month,
@@ -83,13 +85,36 @@ export function Rewind({
   onArtist?: (artist: { artist: string; artist_id?: string }) => void;
 }) {
   const timezone = useMemo(listeningTimezone, []);
-  const now = zonedParts(new Date(), timezone);
+  const [now, setNow] = useState(() => zonedParts(new Date(), timezone));
+  useEffect(() => {
+    const update = () => {
+      const next = zonedParts(new Date(), timezone);
+      setNow((current) => current.y === next.y && current.m === next.m ? current : next);
+    };
+    const timer = window.setInterval(update, 60_000);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [timezone]);
   const [cursor, setCursor] = useState({ year: now.y, month: now.m });
+  const previousMonth = useRef({ year: now.y, month: now.m });
+  useEffect(() => {
+    const previous = previousMonth.current;
+    previousMonth.current = { year: now.y, month: now.m };
+    setCursor((current) => current.year === previous.year && current.month === previous.month
+      ? { year: now.y, month: now.m }
+      : current);
+  }, [now.y, now.m]);
   const data = useRewind("month", cursor.year, cursor.month);
   const label = data.recap?.label || periodLabel("month", cursor.year, cursor.month, timezone);
   const [focus, setFocus] = useState<Focus>("overview");
   const [storyIndex, setStoryIndex] = useState(0);
   const atPresent = cursor.year > now.y || (cursor.year === now.y && cursor.month >= now.m);
+  const atFirstMonth = cursor.year * 12 + cursor.month <= firstMonth;
   const pastMonths = useMemo(() => recentMonths(cursor.year, cursor.month), [cursor.year, cursor.month]);
   const stories = useMemo(() => (data.recap ? storyCards(data.recap) : []), [data.recap]);
   const topArtist = data.recap?.top_artists[0] || null;
@@ -97,6 +122,7 @@ export function Rewind({
   const trackQueue = useMemo(() => (data.recap?.top_tracks || []).map(trackFromListening), [data.recap]);
 
   const openMonth = (year: number, month: number) => {
+    if (year * 12 + month < firstMonth || year * 12 + month > now.y * 12 + now.m) return;
     setCursor({ year, month });
     setFocus("overview");
     setStoryIndex(0);
@@ -109,7 +135,7 @@ export function Rewind({
           <ChevronLeft size={22} />
         </button>
         <div className="capsule-month-row">
-          <button type="button" className="capsule-month-nav" aria-label="Previous month" onClick={() => { const next = shiftMonth(cursor.year, cursor.month, -1); openMonth(next.year, next.month); }}>
+          <button type="button" className="capsule-month-nav" aria-label="Previous month" disabled={atFirstMonth} onClick={() => { const next = shiftMonth(cursor.year, cursor.month, -1); openMonth(next.year, next.month); }}>
             <ChevronLeft size={16} />
           </button>
           <h1>{label}</h1>
