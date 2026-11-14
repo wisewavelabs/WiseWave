@@ -1,6 +1,7 @@
 package listening
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -523,3 +524,34 @@ func likeContains(query string) string {
 }
 
 var errSessionNotFound = errors.New("listening session not found")
+
+func (s *Store) SearchPreferences() (map[string]float64, error) {
+	if err := s.lock(); err != nil {
+		return nil, err
+	}
+	defer s.mu.Unlock()
+	out := make(map[string]float64)
+	if s.private {
+		return out, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `SELECT track_id, COUNT(*) FROM plays
+ WHERE qualified = 1 AND started_at_ms >= ? GROUP BY track_id
+ HAVING COUNT(*) >= 3 ORDER BY COUNT(*) DESC, track_id LIMIT 500`, s.clock().AddDate(0, 0, -90).UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var count int
+		if err := rows.Scan(&id, &count); err != nil {
+			return nil, err
+		}
+		if id != "" {
+			out[id] = min(1, float64(count)/10)
+		}
+	}
+	return out, rows.Err()
+}

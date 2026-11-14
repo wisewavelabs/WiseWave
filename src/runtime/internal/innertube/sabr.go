@@ -1,12 +1,3 @@
-// Package innertube provides UMP (Universal Media Protocol) framing demuxing.
-//
-// Note: Low-level UMP demuxing handles variable-length integer framed parts (such as
-// MEDIA and SABR_ERROR). Full SABR (Server-driven Adaptive BitRate) streaming requires
-// multi-request session orchestration: handling format initialization segments, sequence tokens,
-// continuation scheduling (NEXT_REQUEST_POLICY), and container stitching. WiseWave's stream
-// resolver prioritizes direct progressive container streams (audio/webm and audio/mp4) from
-// clients like IOS_MUSIC and ANDROID_VR to ensure complete, valid WebM/MP4 containers for
-// puropus and HTML5 audio playback.
 package innertube
 
 import (
@@ -112,10 +103,9 @@ func (r *UMPReader) Read(p []byte) (int, error) {
 			return 0, r.err
 
 		case UMPPartMediaEnd:
-			// Marker for end of chunk
 
 		default:
-			// Other UMP metadata parts (MEDIA_HEADER, POLICY, etc.)
+
 		}
 	}
 }
@@ -150,4 +140,3 @@ func WrapIfSABR(resp *http.Response) io.ReadCloser {
 	}
 	return resp.Body
 }
-

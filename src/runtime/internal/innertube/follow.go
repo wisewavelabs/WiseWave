@@ -20,7 +20,7 @@ func (client *MusicClient) Unsubscribe(ctx context.Context, channelID string) er
 }
 
 func (client *MusicClient) writeSubscription(ctx context.Context, name, endpoint, channelID string) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: " + name + " requires cookie authentication")
 	}
 	channelID = strings.TrimSpace(channelID)

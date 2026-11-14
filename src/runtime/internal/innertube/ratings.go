@@ -33,7 +33,7 @@ func parseLikeStatus(name string) LikeStatus {
 }
 
 func (client *MusicClient) RateTrack(ctx context.Context, videoID string, like bool) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: RateTrack requires cookie authentication")
 	}
 	videoID = strings.TrimSpace(videoID)

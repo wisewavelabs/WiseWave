@@ -85,7 +85,7 @@ func BrowseURL(browseID string) string {
 }
 
 func musicIsAlbumID(id string) bool {
-	return strings.HasPrefix(id, "MPR") || strings.Contains(id, "privately_owned_release")
+	return strings.HasPrefix(id, "MPRE") || strings.HasPrefix(id, "MPLA") || strings.Contains(id, "privately_owned_release")
 }
 
 func isPodcastID(id string) bool { return strings.HasPrefix(id, "MPSPP") }
@@ -130,6 +130,8 @@ type MusicItem struct {
 
 	Artists string `json:"artists,omitempty"`
 	Album   string `json:"album,omitempty"`
+	AlbumID string `json:"albumId,omitempty"`
+	Owner   string `json:"owner,omitempty"`
 }
 
 func (item *MusicItem) setCredits(artists []string, album string) {

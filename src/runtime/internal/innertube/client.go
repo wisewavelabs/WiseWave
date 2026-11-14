@@ -1,18 +1,18 @@
 package innertube
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"wisewave-runtime/internal/models"
+	"wisewave-runtime/internal/search"
 )
 
 type PlayerClient struct {
@@ -60,6 +60,8 @@ type Client struct {
 	httpClient       *http.Client
 	clientPreference sync.RWMutex
 	preferredClient  string
+	searchOnce       sync.Once
+	search           *search.Engine
 	flights          singleflightGroup
 }
 
@@ -98,59 +100,47 @@ func (c *Client) ResolveAudioStream(videoID string) (*ResolvedAudioStream, error
 }
 
 func (client *Client) Search(query string) ([]models.Track, error) {
-	endpoint := fmt.Sprintf("https://music.youtube.com/youtubei/v1/search?key=%s", PlayerClients[3].APIKey)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return client.SearchContext(ctx, query)
+}
 
-	hl := "en"
-	gl := "US"
-	if client.MusicClient != nil {
-		if client.MusicClient.language != "" {
-			hl = client.MusicClient.language
+func (client *Client) searchEngine() *search.Engine {
+	client.searchOnce.Do(func() { client.search = search.New(client.retrieveSearch) })
+	return client.search
+}
+
+func (client *Client) SearchContext(ctx context.Context, query string) ([]models.Track, error) {
+	return client.searchEngine().SearchWithRanker(ctx, query, client.MusicClient.searchState.Ranker())
+}
+
+func (client *Client) LocalSearchSuggestions(query string) []string {
+	return client.searchEngine().Suggestions(query, 8)
+}
+
+func (client *Client) retrieveSearch(ctx context.Context, query string) ([]models.Track, error) {
+	raw, err := client.MusicClient.execute(ctx, "search", map[string]any{"query": query, "params": "EgWKAQIIAWoKEAkQBRAKEAMQBA=="})
+	if err != nil {
+		return nil, err
+	}
+	tracks, err := parseSearchResponse(raw)
+	if err != nil {
+		return nil, err
+	}
+	token := continuationToken(decodeResponse(raw))
+	if len(tracks) < 60 && token != "" {
+		next, nextErr := client.MusicClient.execute(ctx, "search", map[string]any{"continuation": token})
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-		if client.MusicClient.country != "" {
-			gl = client.MusicClient.country
+		if nextErr == nil {
+			more, parseErr := parseSearchResponse(next)
+			if parseErr == nil {
+				tracks = append(tracks, more...)
+			}
 		}
 	}
-
-	payload := map[string]interface{}{
-		"context": map[string]interface{}{
-			"client": map[string]interface{}{
-				"clientName":    "WEB_REMIX",
-				"clientVersion": "1.20260707.12.00",
-				"hl":            hl,
-				"gl":            gl,
-			},
-		},
-		"query":  query,
-		"params": "EgWKAQIIAWoKEAkQBRAKEAMQBA==",
-	}
-
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", PlayerClients[3].UserAgent)
-	req.Header.Set("Origin", "https://music.youtube.com")
-	req.Header.Set("Referer", "https://music.youtube.com/")
-
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return parseSearchResponse(respBytes)
+	return tracks, nil
 }
 
 func parseSearchResponse(data []byte) ([]models.Track, error) {
@@ -171,8 +161,13 @@ func parseSearchResponse(data []byte) ([]models.Track, error) {
 					tracks = append(tracks, *track)
 				}
 			}
-			for _, child := range node {
-				walk(child)
+			keys := make([]string, 0, len(node))
+			for key := range node {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				walk(node[key])
 			}
 		case []interface{}:
 			for _, child := range node {

@@ -92,6 +92,10 @@ func parseMusicRenderer(key string, value any) (MusicItem, *jsonObject, bool) {
 		return MusicItem{}, nil, false
 	}
 	item := parseMusicItem(kind, renderer)
+	item.setAlbumCredit(renderer)
+	if item.Thumbnail == "" {
+		item.Thumbnail = rendererThumbnail(renderer.get("thumbnail"))
+	}
 	if key == "playlistPanelVideoRenderer" {
 
 		if videoType := nestedString(renderer.get("navigationEndpoint"), "musicVideoType"); videoType == "" || videoType == "MUSIC_VIDEO_TYPE_ATV" {
@@ -148,6 +152,7 @@ func parseMusicCardShelf(renderer *jsonObject) (MusicItem, bool) {
 		}
 	}
 	item.setCredits(bylineCredits(renderer.get("subtitle")))
+	item.setPlaylistOwner(renderer)
 	if item.VideoID != "" && item.Kind != KindEpisode {
 
 		item.Kind = KindVideo
@@ -280,6 +285,7 @@ func parseMusicItem(kind ItemKind, renderer *jsonObject) MusicItem {
 		item.setCredits(rendererCredits(renderer))
 	}
 	item.PlaylistID, _ = renderer.get("playlistId").(string)
+	item.setPlaylistOwner(renderer)
 	item.PlaylistSetID = nestedString(renderer.get("playlistItemData"), "playlistSetVideoId")
 	item.Like = likeStatus(renderer)
 	item.Library = itemLibraryState(renderer)

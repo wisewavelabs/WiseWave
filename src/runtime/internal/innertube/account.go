@@ -3,6 +3,7 @@ package innertube
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
 type AccountDetails struct {
@@ -10,6 +11,7 @@ type AccountDetails struct {
 	Email     string `json:"email,omitempty"`
 	ChannelID string `json:"channelId,omitempty"`
 	Thumbnail string `json:"thumbnail,omitempty"`
+	Handle    string `json:"handle,omitempty"`
 }
 
 type AccountChannel struct {
@@ -28,7 +30,7 @@ type AccountList struct {
 }
 
 func (client *MusicClient) GetAccountDetails(ctx context.Context) (*AccountDetails, error) {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return nil, errors.New("youtube: GetAccountDetails requires cookie authentication")
 	}
 	raw, err := client.execute(ctx, "account/account_menu", map[string]any{})
@@ -42,6 +44,7 @@ func (client *MusicClient) GetAccountDetails(ctx context.Context) (*AccountDetai
 		details.Name = rendererText(header.get("accountName"))
 		details.Email = rendererText(header.get("email"))
 		details.Thumbnail = rendererThumbnail(header.get("accountPhoto"))
+		details.Handle = rendererText(header.get("channelHandle"))
 	}
 
 	for _, channel := range extractAccountChannels(root) {
@@ -49,6 +52,9 @@ func (client *MusicClient) GetAccountDetails(ctx context.Context) (*AccountDetai
 			continue
 		}
 		details.ChannelID = channel.ChannelID
+		if details.Handle == "" {
+			details.Handle = channel.Handle
+		}
 		if details.Thumbnail == "" {
 			details.Thumbnail = channel.Thumbnail
 		}
@@ -58,7 +64,7 @@ func (client *MusicClient) GetAccountDetails(ctx context.Context) (*AccountDetai
 }
 
 func (client *MusicClient) GetAccounts(ctx context.Context) (*AccountList, error) {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return nil, errors.New("youtube: GetAccounts requires cookie authentication")
 	}
 	raw, err := client.executeAs(ctx, webClient, false, "account/accounts_list", map[string]any{
@@ -150,6 +156,9 @@ func parseAccountChannel(renderer *jsonObject) AccountChannel {
 	}
 	if channel.Byline == "" {
 		channel.Byline = rendererText(renderer.get("account_byline"))
+	}
+	if channel.Handle == "" && strings.HasPrefix(channel.Byline, "@") && !strings.ContainsAny(channel.Byline, " \t\r\n") {
+		channel.Handle = channel.Byline
 	}
 	if channel.Thumbnail == "" {
 		channel.Thumbnail = rendererThumbnail(renderer.get("account_photo"))

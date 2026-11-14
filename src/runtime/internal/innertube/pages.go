@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+
+	"wisewave-runtime/internal/models"
 )
 
 type BrowseResult struct {
@@ -206,6 +209,107 @@ func (client *MusicClient) GetPlaylist(ctx context.Context, playlistID string) (
 	return client.browse(ctx, playlistID)
 }
 
+func (client *MusicClient) GetPlaylistTracks(ctx context.Context, playlistID string, progress func(int)) ([]models.Track, error) {
+	playlistID = strings.TrimPrefix(strings.TrimSpace(playlistID), "VL")
+	if playlistID == "" {
+		return nil, errors.New("youtube: playlist ID is required")
+	}
+	result, err := client.GetPlaylist(ctx, playlistID)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	tracks := make([]models.Track, 0)
+	appendItems := func(items []MusicItem) {
+		for _, item := range items {
+			if !item.IsTrack() || item.IsEpisode() || item.VideoID == "" {
+				continue
+			}
+			if _, exists := seen[item.VideoID]; exists {
+				continue
+			}
+			seen[item.VideoID] = struct{}{}
+			artist := item.Artists
+			if artist == "" {
+				artist = item.Artist
+			}
+			if artist == "" {
+				parts := strings.FieldsFunc(item.Subtitle, func(r rune) bool { return r == '\u2022' || r == '\u00b7' })
+				if len(parts) > 0 {
+					artist = strings.TrimSpace(parts[0])
+				}
+			}
+			seconds := 0
+			for _, part := range strings.Split(item.Duration, ":") {
+				n, parseErr := strconv.Atoi(part)
+				if parseErr != nil {
+					seconds = 0
+					break
+				}
+				seconds = seconds*60 + n
+			}
+			artwork := item.Thumbnail
+			if artwork == "" {
+				artwork = "https://i.ytimg.com/vi/" + item.VideoID + "/hqdefault.jpg"
+			}
+			tracks = append(tracks, models.Track{ID: item.VideoID, Title: item.Title, Artist: artist, ArtistID: item.ArtistID(), Album: item.Album, AlbumID: item.AlbumID, Duration: item.Duration, DurationSeconds: seconds, AlbumArtURL: UpgradeArtworkURL(artwork)})
+		}
+	}
+	queue := make([]string, 0, 1)
+	playlistSectionFound := false
+	for _, section := range result.Sections {
+		if section.Kind == "musicPlaylistShelfRenderer" || section.Kind == "playlistVideoListRenderer" {
+			playlistSectionFound = true
+			appendItems(section.Items)
+			if section.ContinuationToken != "" {
+				queue = append(queue, section.ContinuationToken)
+			}
+		}
+	}
+	if !playlistSectionFound {
+		return nil, errors.New("youtube: playlist track list was not found")
+	}
+	if progress != nil {
+		progress(len(tracks))
+	}
+	seenTokens := make(map[string]struct{})
+	for len(queue) > 0 {
+		token := queue[0]
+		queue = queue[1:]
+		if _, exists := seenTokens[token]; exists {
+			continue
+		}
+		seenTokens[token] = struct{}{}
+		if len(seenTokens) > 100 || len(tracks) > 50000 {
+			return nil, errors.New("youtube: playlist exceeds the import limit")
+		}
+		page, continueErr := client.ContinueBrowse(ctx, token)
+		if continueErr != nil {
+			return nil, continueErr
+		}
+		continuationFound := false
+		for _, section := range page.Sections {
+			if section.Kind == "musicPlaylistShelfContinuation" || section.Kind == "playlistVideoListContinuation" {
+				continuationFound = true
+				appendItems(section.Items)
+				if section.ContinuationToken != "" {
+					queue = append(queue, section.ContinuationToken)
+				}
+			}
+		}
+		if !continuationFound {
+			appendItems(page.Items)
+			if page.ContinuationToken != "" {
+				queue = append(queue, page.ContinuationToken)
+			}
+		}
+		if progress != nil {
+			progress(len(tracks))
+		}
+	}
+	return tracks, nil
+}
+
 func (client *MusicClient) GetPodcast(ctx context.Context, showID string) (*BrowseResult, error) {
 	if !isPodcastID(showID) {
 		return nil, fmt.Errorf("youtube: invalid podcast ID %q", showID)
@@ -367,7 +471,7 @@ func (client *MusicClient) GetNewReleases(ctx context.Context) (*BrowseResult, e
 }
 
 func (client *MusicClient) GetHistory(ctx context.Context) (*BrowseResult, error) {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return nil, errors.New("youtube: history requires signed-in session")
 	}
 	return client.browse(ctx, "FEmusic_history")

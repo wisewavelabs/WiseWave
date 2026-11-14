@@ -109,7 +109,7 @@ func (client *MusicClient) BeginEpisodePlayback(ctx context.Context, videoID str
 }
 
 func (c *MusicClient) reportPlayback(ctx context.Context, videoID string, position, duration time.Duration, withWatchtime bool) (*PlaybackSession, error) {
-	if c.cookieAuth == nil || strings.TrimSpace(videoID) == "" {
+	if c.cookieAuth.Load() == nil || strings.TrimSpace(videoID) == "" {
 		return nil, nil
 	}
 	raw, err := c.execute(ctx, "player", map[string]any{

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"wisewave-runtime/internal/models"
+	"wisewave-runtime/internal/search"
 )
 
 type SearchFilter struct {
@@ -43,18 +45,80 @@ func (client *MusicClient) Search(ctx context.Context, query string, options Sea
 	if err != nil {
 		return nil, err
 	}
-	return client.newSearchResult(raw), nil
+	result := client.newSearchResult(raw)
+	rankSearchItemsWithRanker(query, result, client.searchState.Ranker())
+	client.rememberSearchPage(query, result, search.PageState{})
+	return result, nil
 }
 
-func (client *MusicClient) ContinueSearch(ctx context.Context, token string) (*SearchResult, error) {
+func rankSearchItems(query string, result *SearchResult) {
+	rankSearchItemsWithRanker(query, result, search.Ranker{})
+}
+
+func rankSearchItemsWithRanker(query string, result *SearchResult, ranker search.Ranker) {
+	var tracks []models.Track
+	items := make(map[string]MusicItem)
+	for _, item := range result.Items {
+		if item.IsTrack() {
+			artist := item.Artists
+			if artist == "" {
+				artist = item.Artist
+			}
+			tracks = append(tracks, models.Track{ID: item.VideoID, Title: item.Title, Artist: artist, Album: item.Album, Duration: item.Duration, DurationSeconds: parseDurationSeconds(item.Duration)})
+			if _, ok := items[item.VideoID]; !ok {
+				items[item.VideoID] = item
+			}
+		}
+	}
+	ranked := ranker.Tracks(query, tracks)
+	out := make([]MusicItem, 0, len(result.Items))
+	index := 0
+	for _, item := range result.Items {
+		if !item.IsTrack() {
+			out = append(out, item)
+		} else if index < len(ranked) {
+			out = append(out, items[ranked[index].ID])
+			index++
+		}
+	}
+	result.Items = out
+	if result.TopResult.IsTrack() && len(ranked) > 0 {
+		result.TopResult = items[ranked[0].ID]
+	}
+}
+
+func (client *MusicClient) ContinueSearch(ctx context.Context, token string, originalQuery ...string) (*SearchResult, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("youtube: search continuation token is required")
+	}
+	state := client.searchState.Page(token)
+	query := state.Query
+	if len(originalQuery) > 0 && strings.TrimSpace(originalQuery[0]) != "" {
+		if query != "" && search.Normalize(query) != search.Normalize(originalQuery[0]) {
+			return nil, errors.New("youtube: continuation query mismatch")
+		}
+		query = originalQuery[0]
+	}
+	if len(query) > 512 || len(token) > 8192 {
+		return nil, errors.New("youtube: invalid search continuation")
 	}
 	raw, err := client.execute(ctx, "search", map[string]any{"continuation": token})
 	if err != nil {
 		return nil, err
 	}
-	return client.newSearchResult(raw), nil
+	result := client.newSearchResult(raw)
+	if query != "" {
+		items := make([]MusicItem, 0, len(result.Items))
+		for _, item := range result.Items {
+			if !item.IsTrack() || !state.Seen[item.VideoID] {
+				items = append(items, item)
+			}
+		}
+		result.Items = items
+		rankSearchItemsWithRanker(query, result, client.searchState.Ranker())
+		client.rememberSearchPage(query, result, state)
+	}
+	return result, nil
 }
 
 func (client *MusicClient) GetSearchSuggestions(ctx context.Context, input string) (*SearchSuggestions, error) {
@@ -142,4 +206,18 @@ func searchEndpointParams(renderer *jsonObject) string {
 	}
 	params, _ := search.get("params").(string)
 	return params
+}
+
+func (client *MusicClient) SetSearchPreferences(snapshot func() func(models.Track) float64) {
+	client.searchState.SetPreferences(snapshot)
+}
+
+func (client *MusicClient) rememberSearchPage(query string, result *SearchResult, previous search.PageState) {
+	ids := make([]string, 0, len(result.Items))
+	for _, item := range result.Items {
+		if item.IsTrack() {
+			ids = append(ids, item.VideoID)
+		}
+	}
+	client.searchState.RememberPage(query, result.ContinuationToken, ids, previous)
 }

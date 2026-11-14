@@ -12,7 +12,7 @@ import (
 const playlistPrivacy = "PRIVATE"
 
 func (client *MusicClient) CreatePlaylist(ctx context.Context, title string, videos ...string) (string, error) {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return "", errors.New("youtube: CreatePlaylist requires cookie authentication")
 	}
 	title, err := playlistTitle(title)
@@ -47,7 +47,7 @@ func (client *MusicClient) CreatePlaylist(ctx context.Context, title string, vid
 var ErrAlreadyInPlaylist = errors.New("youtube: the video is already in the playlist")
 
 func (client *MusicClient) AddToPlaylist(ctx context.Context, playlistID, videoID string) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: AddToPlaylist requires cookie authentication")
 	}
 	playlistID = strings.TrimPrefix(strings.TrimSpace(playlistID), "VL")
@@ -102,7 +102,7 @@ func alreadyInPlaylist(raw json.RawMessage, videoID string) bool {
 }
 
 func (client *MusicClient) DeletePlaylist(ctx context.Context, playlistID string) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: DeletePlaylist requires cookie authentication")
 	}
 	playlistID = strings.TrimPrefix(strings.TrimSpace(playlistID), "VL")
@@ -127,7 +127,7 @@ func (client *MusicClient) DeletePlaylist(ctx context.Context, playlistID string
 }
 
 func (client *MusicClient) RemoveFromPlaylist(ctx context.Context, playlistID, playlistSetID string) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: RemoveFromPlaylist requires cookie authentication")
 	}
 	playlistID = strings.TrimPrefix(strings.TrimSpace(playlistID), "VL")
@@ -193,7 +193,7 @@ func playlistTitle(title string) (string, error) {
 }
 
 func (client *MusicClient) AddBatchToPlaylist(ctx context.Context, playlistID string, videoIDs ...string) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: AddBatchToPlaylist requires cookie authentication")
 	}
 	playlistID = strings.TrimPrefix(strings.TrimSpace(playlistID), "VL")
@@ -229,7 +229,7 @@ func (client *MusicClient) AddBatchToPlaylist(ctx context.Context, playlistID st
 }
 
 func (client *MusicClient) MovePlaylistItem(ctx context.Context, playlistID, setVideoID, successorSetVideoID string) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: MovePlaylistItem requires cookie authentication")
 	}
 	playlistID = strings.TrimPrefix(strings.TrimSpace(playlistID), "VL")

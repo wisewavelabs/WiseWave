@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -23,6 +24,21 @@ import (
 var videoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 var spotifyTrackID = regexp.MustCompile(`^[A-Za-z0-9]{22}$`)
 var trackTextNoise = regexp.MustCompile(`[^a-z0-9 ]+`)
+var audioErrorURL = regexp.MustCompile(`https?://[^\s"'<>]+`)
+
+func audioFailureDiagnostic(err error) string {
+	message := audioErrorURL.ReplaceAllString(err.Error(), "<url>")
+	message = strings.Map(func(r rune) rune {
+		if r < ' ' || r == 127 {
+			return ' '
+		}
+		return r
+	}, message)
+	if len(message) > 1600 {
+		message = message[:1600]
+	}
+	return message
+}
 
 type Music struct {
 	client  *innertube.Client
@@ -143,6 +159,7 @@ func (m *Music) resolveAudio(ctx context.Context, id string, maxBitrate int) (*i
 		}
 		return m.gaana.ResolveAudioStream(id)
 	case videoID.MatchString(id):
+		var failures []error
 		for _, options := range []innertube.StreamOptions{
 			{PreferredCodec: innertube.CodecOpus, RequireCodec: true, Validate: true, MaxBitrate: maxBitrate},
 			{PreferredCodec: innertube.CodecAAC, RequireCodec: true, Validate: true, MaxBitrate: maxBitrate},
@@ -152,8 +169,9 @@ func (m *Music) resolveAudio(ctx context.Context, id string, maxBitrate int) (*i
 			if err == nil {
 				return stream, nil
 			}
+			failures = append(failures, fmt.Errorf("codec %d: %w", options.PreferredCodec, err))
 		}
-		return nil, errors.New("no supported audio format found")
+		return nil, fmt.Errorf("no supported audio format found: %w", errors.Join(failures...))
 	default:
 		return nil, errors.New("unsupported track source")
 	}
@@ -186,9 +204,16 @@ func (m *Music) Suggestions(query string) ([]string, error) {
 		return []string{}, nil
 	}
 	if m.client != nil && m.client.MusicClient != nil {
-		sug, err := m.client.GetSearchSuggestions(context.Background(), query)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		sug, err := m.client.GetSearchSuggestions(ctx, query)
 		if err == nil && sug != nil && len(sug.Queries) > 0 {
 			return sug.Queries, nil
+		}
+	}
+	if m.client != nil {
+		if local := m.client.LocalSearchSuggestions(query); len(local) > 0 {
+			return local, nil
 		}
 	}
 	return fetchPublicSuggestions(query)
@@ -462,4 +487,22 @@ func (handler Audio) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodHead {
 		_, _ = io.Copy(w, body)
 	}
+}
+
+func WireListeningSearch(listening *Listening, music *Music) {
+	if listening == nil || listening.store == nil || music == nil || music.client == nil {
+		return
+	}
+	music.client.MusicClient.SetSearchPreferences(func() func(models.Track) float64 {
+		scores, err := listening.store.SearchPreferences()
+		if err != nil || len(scores) == 0 {
+			return nil
+		}
+		return func(track models.Track) float64 {
+			if track.IsFavorite {
+				return 1
+			}
+			return scores[track.ID]
+		}
+	})
 }

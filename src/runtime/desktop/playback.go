@@ -168,6 +168,9 @@ func (p *Playback) load(id string, position float64, start bool) error {
 	} else {
 		stream, err := p.resolveStream(ctx, id)
 		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("resolve audio for %s: %s", id, audioFailureDiagnostic(err))
+			}
 			return errors.New("Audio is unavailable for this track")
 		}
 

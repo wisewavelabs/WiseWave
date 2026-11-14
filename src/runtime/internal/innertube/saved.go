@@ -27,7 +27,7 @@ func (client *MusicClient) RemoveFromLibrary(ctx context.Context, playlistID str
 }
 
 func (client *MusicClient) writeLibrary(ctx context.Context, name, playlistID string, save bool) error {
-	if client.cookieAuth == nil {
+	if client.cookieAuth.Load() == nil {
 		return errors.New("youtube: " + name + " requires cookie authentication")
 	}
 

@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
+	"wisewave-runtime/internal/search"
 
 	"github.com/gofiber/fiber/v2"
 	"wisewave-runtime/internal/err"
@@ -72,7 +76,10 @@ func (h *TrackHandler) GetTrack(c *fiber.Ctx) error {
 }
 
 func (h *TrackHandler) Search(c *fiber.Ctx) error {
-	query := c.Query("q")
+	query := strings.TrimSpace(c.Query("q"))
+	if len(query) > 512 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid search query"})
+	}
 	if query == "" {
 		return c.JSON(fiber.Map{
 			"data":  []interface{}{},
@@ -111,17 +118,20 @@ func (h *TrackHandler) Search(c *fiber.Ctx) error {
 		return h.SearchSpotifyPlaylists(c)
 	}
 
-	localResults := h.catalog.Search(query)
+	localResults := h.catalog.GetAllTracks()
+	sort.Slice(localResults, func(i, j int) bool { return localResults[i].ID < localResults[j].ID })
 	combined := make([]models.Track, 0)
 	combined = append(combined, localResults...)
 
-	remoteResults, failure := h.tube.Search(query)
+	ctx, cancel := context.WithTimeout(c.UserContext(), 20*time.Second)
+	defer cancel()
+	remoteResults, failure := h.tube.SearchContext(ctx, query)
 	if failure != nil {
 		log.Printf("tube search error for %s: %v", query, failure)
 	}
 	if failure == nil && len(remoteResults) > 0 {
 		combined = append(combined, remoteResults...)
-	} else {
+	} else if ctx.Err() == nil {
 		saavnResults, errSaavn := h.saavn.Search(query)
 		if errSaavn == nil && len(saavnResults) > 0 {
 			combined = append(combined, saavnResults...)
@@ -132,6 +142,13 @@ func (h *TrackHandler) Search(c *fiber.Ctx) error {
 		}
 	}
 
+	ranked := (search.Ranker{}).Rank(query, combined)
+	combined = make([]models.Track, 0, len(ranked))
+	for _, result := range ranked {
+		if result.Score > .08 {
+			combined = append(combined, result.Track)
+		}
+	}
 	return c.JSON(fiber.Map{
 		"data":   combined,
 		"total":  len(combined),

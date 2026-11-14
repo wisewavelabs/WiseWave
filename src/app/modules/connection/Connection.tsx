@@ -92,10 +92,6 @@ export function Connection({ music }: { music?: ReturnType<typeof useMusic> }) {
     ? `${(state.sample_rate / 1000).toFixed(0)} kHz`
     : "—";
 
-  const bufferAhead = hasAudio && isPlaying && state?.buffer_ahead != null
-    ? `${state.buffer_ahead.toFixed(1)}s`
-    : "—";
-
   const audioChannels = hasAudio && state?.channels
     ? (state.channels === 1 ? "Mono" : state.channels === 2 ? "Stereo" : `${state.channels} channels`)
     : "—";
@@ -108,7 +104,6 @@ export function Connection({ music }: { music?: ReturnType<typeof useMusic> }) {
     { label: "Stream quality", value: streamQuality },
     { label: "Audio codec", value: audioCodec },
     { label: "Sample rate", value: sampleRate },
-    { label: "Buffer ahead", value: bufferAhead },
     { label: "Audio channels", value: audioChannels },
   ];
 

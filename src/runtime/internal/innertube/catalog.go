@@ -523,7 +523,7 @@ func (client *Client) SearchCatalog(query string, kind string) (interface{}, err
 	}
 	artists, albums, playlists, _ := catalogSearchItems(root)
 	if kind == "" || kind == "top" {
-		// Unfiltered search returns top shelves across types.
+
 		return map[string]interface{}{"artists": artists, "albums": albums, "playlists": playlists}, nil
 	}
 	switch kind {

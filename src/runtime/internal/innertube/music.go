@@ -12,7 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"wisewave-runtime/internal/search"
 )
 
 const (
@@ -45,6 +47,7 @@ type MusicOptions struct {
 }
 
 type MusicClient struct {
+	searchState             search.State
 	tokens                  func(context.Context, string, string) (string, string, error)
 	httpClient              *http.Client
 	baseURL                 string
@@ -55,7 +58,7 @@ type MusicClient struct {
 	visitorData             string
 	language                string
 	country                 string
-	cookieAuth              *CookieAuth
+	cookieAuth              atomic.Pointer[CookieAuth]
 	allowInsecureCookieAuth bool
 }
 
@@ -88,7 +91,7 @@ func NewMusicClient(options MusicOptions) *MusicClient {
 	if options.Country == "" {
 		options.Country = "US"
 	}
-	return &MusicClient{
+	client := &MusicClient{
 		tokens:                  options.Tokens,
 		httpClient:              options.HTTPClient,
 		baseURL:                 strings.TrimRight(options.BaseURL, "/"),
@@ -98,9 +101,10 @@ func NewMusicClient(options MusicOptions) *MusicClient {
 		visitorData:             options.VisitorData,
 		language:                options.Language,
 		country:                 options.Country,
-		cookieAuth:              options.CookieAuth,
 		allowInsecureCookieAuth: options.AllowInsecureCookieAuth,
 	}
+	client.cookieAuth.Store(options.CookieAuth)
+	return client
 }
 
 type clientContext struct {
@@ -123,11 +127,11 @@ type clientUserContext struct {
 	OnBehalfOfUser string `json:"onBehalfOfUser,omitempty"`
 }
 
-func (client *MusicClient) context() clientContext {
+func (client *MusicClient) context(auth *CookieAuth) clientContext {
 	var ctx clientContext
 	ctx.Client.HL = client.language
 	ctx.Client.GL = client.country
-	if client.cookieAuth == nil {
+	if auth == nil {
 		ctx.Client.VisitorData = client.currentVisitorData()
 	}
 	return ctx
@@ -198,7 +202,11 @@ func (c *MusicClient) executeAs(ctx context.Context, client innerTubeClient, aud
 	case visionOSClient:
 		clientName, clientID, clientVersion = "VISIONOS", "101", visionOSVersion
 	}
-	requestContext := c.context()
+	auth := c.cookieAuth.Load()
+	if client != musicClient && client != webClient {
+		auth = nil
+	}
+	requestContext := c.context(auth)
 	requestContext.Client.ClientName = clientName
 	requestContext.Client.ClientVersion = clientVersion
 	if client == visionOSClient {
@@ -206,8 +214,8 @@ func (c *MusicClient) executeAs(ctx context.Context, client innerTubeClient, aud
 		device.DeviceMake, device.DeviceModel, device.UserAgent = "Apple", "RealityDevice17,1", visionOSUserAgent
 		device.OSName, device.OSVersion = "visionOS", "26.5.23O471"
 	}
-	if c.cookieAuth != nil {
-		requestContext.User = &clientUserContext{OnBehalfOfUser: c.cookieAuth.onBehalfOfUser}
+	if auth != nil {
+		requestContext.User = &clientUserContext{OnBehalfOfUser: auth.onBehalfOfUser}
 	}
 	payload["context"] = requestContext
 	if audioOnly {
@@ -222,7 +230,7 @@ func (c *MusicClient) executeAs(ctx context.Context, client innerTubeClient, aud
 	if err != nil {
 		return nil, fmt.Errorf("youtube: invalid API URL: %w", err)
 	}
-	if c.cookieAuth != nil && !c.allowInsecureCookieAuth && !isYouTubeURL(parsedURL) {
+	if auth != nil && !c.allowInsecureCookieAuth && !isYouTubeURL(parsedURL) {
 		return nil, errors.New("youtube: refusing to send cookie authentication to a non-YouTube or non-HTTPS URL")
 	}
 	query := parsedURL.Query()
@@ -248,7 +256,7 @@ func (c *MusicClient) executeAs(ctx context.Context, client innerTubeClient, aud
 	req.Header.Set("Referer", origin+"/")
 	req.Header.Set("X-YouTube-Client-Name", clientID)
 	req.Header.Set("X-YouTube-Client-Version", clientVersion)
-	c.setIdentity(req, requestContext.Client.VisitorData)
+	c.setIdentityWithAuth(req, requestContext.Client.VisitorData, auth)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -282,17 +290,21 @@ func (c *MusicClient) executeAs(ctx context.Context, client innerTubeClient, aud
 }
 
 func (client *MusicClient) setIdentity(req *http.Request, visitorData string) {
+	client.setIdentityWithAuth(req, visitorData, client.cookieAuth.Load())
+}
 
-	if visitorData != "" && client.cookieAuth == nil {
+func (client *MusicClient) setIdentityWithAuth(req *http.Request, visitorData string, auth *CookieAuth) {
+
+	if visitorData != "" && auth == nil {
 		req.Header.Set("X-Goog-Visitor-Id", visitorData)
 	}
-	if client.cookieAuth != nil {
-		req.Header.Set("Cookie", client.cookieAuth.cookie)
+	if auth != nil {
+		req.Header.Set("Cookie", auth.cookie)
 		origin := req.URL.Scheme + "://" + req.URL.Host
-		req.Header.Set("Authorization", client.cookieAuth.authorization(time.Now(), origin))
-		req.Header.Set("X-Goog-Authuser", strconv.Itoa(client.cookieAuth.accountIndex))
-		if client.cookieAuth.onBehalfOfUser != "" {
-			req.Header.Set("X-Goog-PageId", client.cookieAuth.onBehalfOfUser)
+		req.Header.Set("Authorization", auth.authorization(time.Now(), origin))
+		req.Header.Set("X-Goog-Authuser", strconv.Itoa(auth.accountIndex))
+		if auth.onBehalfOfUser != "" {
+			req.Header.Set("X-Goog-PageId", auth.onBehalfOfUser)
 		}
 	}
 }
@@ -332,3 +344,5 @@ func responseError(operation string, resp *http.Response) error {
 	}
 	return fmt.Errorf("youtube: %s returned HTTP %d: %s", operation, resp.StatusCode, diagnostic)
 }
+
+func (client *MusicClient) SetCookieAuth(auth *CookieAuth) { client.cookieAuth.Store(auth) }

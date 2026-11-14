@@ -46,7 +46,7 @@ func (h *TrackHandler) Music(c *fiber.Ctx) error {
 		data, err = innertube.DefaultSponsorBlock.GetSegments(ctx, id)
 	case "search":
 		if token != "" {
-			data, err = client.ContinueSearch(ctx, token)
+			data, err = client.ContinueSearch(ctx, token, query)
 		} else if query != "" {
 			data, err = client.Search(ctx, query, innertube.SearchOptions{})
 		} else {
