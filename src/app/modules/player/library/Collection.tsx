@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Clock3, Heart, ListMusic, Search } from "lucide-react";
 import type { Track } from "../../../mygo";
 import { formatAddedAt, type LibraryTrack, type Playlist } from "./useLibrary";
@@ -33,6 +33,13 @@ export function Collection({
   const openSongMenu = useSongMenu();
   const openPlaylistMenu = usePlaylistMenu();
   const [query, setQuery] = useState("");
+  const [coverFailed, setCoverFailed] = useState(false);
+  const [fallbackCoverFailed, setFallbackCoverFailed] = useState(false);
+
+  useEffect(() => {
+    setCoverFailed(false);
+    setFallbackCoverFailed(false);
+  }, [playlist?.cover, playlist?.id]);
 
   const visibleSongs = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -60,10 +67,10 @@ export function Collection({
 
   const playlistArtwork = useMemo(() => {
     if (kind !== "playlist") return "";
-    if (playlist?.cover) return playlist.cover;
     const firstArt = tracks[0]?.album_art_url || "";
-    return artworkURL(firstArt, 256) || firstArt;
-  }, [kind, playlist?.cover, tracks]);
+    const source = playlist?.cover && !coverFailed ? playlist.cover : firstArt;
+    return artworkURL(source, 256) || source;
+  }, [kind, playlist?.cover, tracks, coverFailed]);
   const playlistTheme = useImageTheme(playlistArtwork || null, DEFAULT_PLAYLIST_THEME);
 
   return (
@@ -72,8 +79,16 @@ export function Collection({
         <div className="collection-heading">
           {kind === "liked" ? (
             <LikedSongsCover className="collection-cover" />
-          ) : playlist?.cover ? (
-            <img className="collection-cover playlist-custom-cover" src={playlist.cover} alt="" />
+          ) : playlistArtwork && !(coverFailed && fallbackCoverFailed) ? (
+            <Artwork
+              className="collection-cover playlist-custom-cover"
+              src={playlistArtwork}
+              size={256}
+              onFail={() => {
+                if (playlist?.cover && !coverFailed) setCoverFailed(true);
+                else setFallbackCoverFailed(true);
+              }}
+            />
           ) : (
             <div className="collection-cover playlist-cover-fallback">
               <ListMusic size={52} />

@@ -60,11 +60,7 @@ export function artworkURL(src: string, size = 512) {
       return url.href;
     }
     if (isYtimg(url.hostname)) {
-      url.pathname = url.pathname
-        .replace(/hqdefault\.jpg$/i, "hq720.jpg")
-        .replace(/sddefault\.jpg$/i, "hq720.jpg")
-        .replace(/mqdefault\.jpg$/i, "hq720.jpg")
-        .replace(/default\.jpg$/i, "hq720.jpg");
+      url.pathname = url.pathname.replace(/(?:maxresdefault|sddefault|hq720|hqdefault|mqdefault|default)\.jpg$/i, "hqdefault.jpg");
       return url.href;
     }
     return url.href;
