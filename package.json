@@ -1,5 +1,6 @@
 {
   "name": "wisewave",
+  "description": "One more song, then we'll sleep.",
   "private": true,
   "type": "module",
   "scripts": {
