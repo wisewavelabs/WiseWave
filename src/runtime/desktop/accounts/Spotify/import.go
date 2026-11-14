@@ -1,4 +1,4 @@
-package desktop
+package spotify
 
 import (
 	"errors"
@@ -17,24 +17,25 @@ const (
 )
 
 type SpotifyImportStatus struct {
-	Phase     string `json:"phase"`
-	SourceID  string `json:"source_id"`
-	Title     string `json:"title"`
-	Done      int    `json:"done"`
-	Total     int    `json:"total"`
-	Matched   int    `json:"matched"`
-	Error     string `json:"error"`
+	Phase    string `json:"phase"`
+	SourceID string `json:"source_id"`
+	Title    string `json:"title"`
+	Done     int    `json:"done"`
+	Total    int    `json:"total"`
+	Matched  int    `json:"matched"`
+	Error    string `json:"error"`
+	Stage    string `json:"stage"`
 }
 
 type SpotifyImportResult struct {
-	SourceID  string         `json:"source_id"`
-	Title     string         `json:"title"`
-	CoverURL  string         `json:"cover_url"`
-	Liked     bool           `json:"liked"`
-	Tracks    []models.Track `json:"tracks"`
-	Matched   int            `json:"matched"`
-	Failed    int            `json:"failed"`
-	Total     int            `json:"total"`
+	SourceID string         `json:"source_id"`
+	Title    string         `json:"title"`
+	CoverURL string         `json:"cover_url"`
+	Liked    bool           `json:"liked"`
+	Tracks   []models.Track `json:"tracks"`
+	Matched  int            `json:"matched"`
+	Failed   int            `json:"failed"`
+	Total    int            `json:"total"`
 }
 
 type trackSearcher func(query string) ([]models.Track, error)
@@ -75,6 +76,7 @@ func (a *SpotifyAccount) Import(sourceID string) (SpotifyImportResult, error) {
 	a.importDone = 0
 	a.importTotal = 0
 	a.importMatched = 0
+	a.importStage = "fetching"
 	a.mu.Unlock()
 	a.emitImport()
 
@@ -134,14 +136,15 @@ func (a *SpotifyAccount) Import(sourceID string) (SpotifyImportResult, error) {
 	a.importTotal = len(sourceTracks)
 	a.importDone = 0
 	a.importMatched = 0
+	a.importStage = "matching"
 	a.mu.Unlock()
 	a.emitImport()
 
 	matched := matchSourceTracks(sourceTracks, search, func(done, total, hits int) {
 		a.mu.Lock()
-		a.importDone = done
+		a.importDone = max(a.importDone, done)
 		a.importTotal = total
-		a.importMatched = hits
+		a.importMatched = max(a.importMatched, hits)
 		a.mu.Unlock()
 		a.emitImport()
 	})
@@ -160,6 +163,7 @@ func (a *SpotifyAccount) Import(sourceID string) (SpotifyImportResult, error) {
 	a.importErr = ""
 	a.importDone = len(sourceTracks)
 	a.importMatched = len(matched)
+	a.importStage = "complete"
 	a.mu.Unlock()
 	a.emitImport()
 	return result, nil
@@ -168,6 +172,7 @@ func (a *SpotifyAccount) Import(sourceID string) (SpotifyImportResult, error) {
 func (a *SpotifyAccount) failImport(err error) (SpotifyImportResult, error) {
 	a.mu.Lock()
 	a.importErr = err.Error()
+	a.importStage = "error"
 	a.mu.Unlock()
 	a.emitImport()
 	return SpotifyImportResult{}, err
@@ -193,6 +198,7 @@ func (a *SpotifyAccount) importStatusLocked() SpotifyImportStatus {
 		Total:    a.importTotal,
 		Matched:  a.importMatched,
 		Error:    a.importErr,
+		Stage:    a.importStage,
 	}
 }
 

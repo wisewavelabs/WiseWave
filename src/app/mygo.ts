@@ -72,6 +72,15 @@ export interface DayBucket {
   plays: number;
 }
 
+export interface DiscordProfile {
+  id: string;
+  username: string;
+  global_name: string;
+  avatar: string;
+  bot: boolean;
+  public_flags: number;
+}
+
 export interface DiscordState {
   track_id: string;
   title: string;
@@ -166,6 +175,8 @@ export interface MusicItem {
   artist?: string;
   artists?: string;
   album?: string;
+  albumId?: string;
+  owner?: string;
 }
 
 export interface MusicSection {
@@ -319,6 +330,7 @@ export interface SpotifyImportStatus {
   total: number;
   matched: number;
   error: string;
+  stage: string;
 }
 
 export interface SpotifyLibraryPlaylist {
@@ -417,6 +429,67 @@ export interface TrayState {
   playing: boolean;
   hasNext: boolean;
   muted: boolean;
+}
+
+export interface YouTubeAccountStatus {
+  linked: boolean;
+  restoring: boolean;
+  display_name: string;
+  username: string;
+  email: string;
+  image_url: string;
+  error: string;
+}
+
+export interface YouTubeImportResult {
+  source_id: string;
+  title: string;
+  cover_url: string;
+  liked: boolean;
+  tracks: Track[];
+  matched: number;
+  failed: number;
+  total: number;
+}
+
+export interface YouTubeImportStatus {
+  phase: string;
+  stage: string;
+  source_id: string;
+  done: number;
+  total: number;
+  matched: number;
+  error: string;
+}
+
+export interface YouTubeLibraryPlaylist {
+  id: string;
+  name: string;
+  subtitle: string;
+  owner: string;
+  track_count: number;
+  image_url: string;
+}
+
+export interface YouTubeLibrarySnapshot {
+  display_name: string;
+  username: string;
+  image_url: string;
+  email: string;
+  liked_songs: number;
+  playlist_count: number;
+  playlists: YouTubeLibraryPlaylist[];
+}
+
+export interface YouTubeLoginStatus {
+  busy: boolean;
+  error: string;
+}
+
+export interface YouTubeSyncStatus {
+  phase: string;
+  error: string;
+  library: YouTubeLibrarySnapshot | null;
 }
 
 // ---- Services ----
@@ -566,6 +639,9 @@ export const Discord = {
   isEnabled(): Promise<boolean> {
     return call("Discord.IsEnabled");
   },
+  profile(): Promise<DiscordProfile> {
+    return call("Discord.Profile");
+  },
   setEnabled(enabled: boolean): Promise<void> {
     return call("Discord.SetEnabled", enabled);
   },
@@ -682,6 +758,45 @@ export const SpotifyLogin = {
   },
 } as const;
 
+export const YouTubeAccount = {
+  cancelSync(): Promise<void> {
+    return call("YouTubeAccount.CancelSync");
+  },
+  disconnect(): Promise<void> {
+    return call("YouTubeAccount.Disconnect");
+  },
+  import(sourceID: string): Promise<YouTubeImportResult> {
+    return call("YouTubeAccount.Import", sourceID);
+  },
+  importStatus(): Promise<YouTubeImportStatus> {
+    return call("YouTubeAccount.ImportStatus");
+  },
+  status(): Promise<YouTubeAccountStatus> {
+    return call("YouTubeAccount.Status");
+  },
+  syncLibrary(): Promise<YouTubeSyncStatus> {
+    return call("YouTubeAccount.SyncLibrary");
+  },
+  syncStatus(): Promise<YouTubeSyncStatus> {
+    return call("YouTubeAccount.SyncStatus");
+  },
+} as const;
+
+export const YouTubeLogin = {
+  cancel(): Promise<void> {
+    return call("YouTubeLogin.Cancel");
+  },
+  logout(): Promise<void> {
+    return call("YouTubeLogin.Logout");
+  },
+  start(): Promise<void> {
+    return call("YouTubeLogin.Start");
+  },
+  status(): Promise<YouTubeLoginStatus> {
+    return call("YouTubeLogin.Status");
+  },
+} as const;
+
 export const Clipboard = {
   writeText(text: string): Promise<void> {
     return call("Clipboard.WriteText", text);
@@ -698,10 +813,13 @@ export const HistoryExport = {
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
-  mediaAction: event<string>("media-action"),
   spotifyAccountChanged: event<boolean>("spotify-account-changed"),
   spotifyLibrarySyncChanged: event<SpotifySyncStatus>("spotify-library-sync-changed"),
   spotifyImportChanged: event<SpotifyImportStatus>("spotify-import-changed"),
+  youtubeAccountChanged: event<boolean>("youtube-account-changed"),
+  youtubeLibrarySyncChanged: event<YouTubeSyncStatus>("youtube-library-sync-changed"),
+  youtubeImportChanged: event<YouTubeImportStatus>("youtube-import-changed"),
+  mediaAction: event<string>("media-action"),
   trayAction: event<string>("tray-action"),
   playerFullscreenChanged: event<boolean>("player-fullscreen-changed"),
 } as const;

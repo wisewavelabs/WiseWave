@@ -6,6 +6,7 @@ import splashLogo from "../../resources/splash.svg";
 import staticLogo from "../../resources/images/icon.png";
 import { readZoom, setZoom, stepZoom, syncZoom } from "./shared/zoom";
 import { SnackbarProvider } from "./shared/ui/Snackbar";
+import { AccountImportNotifications } from "./modules/accounts/shared/ImportProgress";
 import "./styles.css";
 
 try {
@@ -74,4 +75,4 @@ window.addEventListener("contextmenu", (event) => {
   event.preventDefault();
 });
 
-createRoot(document.getElementById("root")!).render(<SnackbarProvider>{new URLSearchParams(window.location.search).get("view") === "mini" ? <MiniPlayer /> : <App />}</SnackbarProvider>);
+createRoot(document.getElementById("root")!).render(<SnackbarProvider>{new URLSearchParams(window.location.search).get("view") === "mini" ? <MiniPlayer /> : <><AccountImportNotifications /><App /></>}</SnackbarProvider>);

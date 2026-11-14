@@ -37,6 +37,15 @@ type DiscordState struct {
 	ButtonURL   string  `json:"button_url,omitempty"`
 }
 
+type DiscordProfile struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	GlobalName  string `json:"global_name"`
+	Avatar      string `json:"avatar"`
+	Bot         bool   `json:"bot"`
+	PublicFlags int    `json:"public_flags"`
+}
+
 type Discord struct {
 	mu      sync.Mutex
 	session *discord.Session
@@ -64,6 +73,27 @@ func (d *Discord) IsEnabled() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.enabled
+}
+
+func (d *Discord) Profile() DiscordProfile {
+	d.mu.Lock()
+	if !d.enabled {
+		d.mu.Unlock()
+		return DiscordProfile{}
+	}
+	if d.session == nil {
+		id, err := discord.ParseApplicationID(d.appID)
+		if err != nil {
+			d.mu.Unlock()
+			return DiscordProfile{}
+		}
+		d.session = discord.New(id)
+	}
+	session := d.session
+	d.mu.Unlock()
+	session.Update(discord.State{Connect: true})
+	identity := session.Identity()
+	return DiscordProfile{ID: identity.ID, Username: identity.Username, GlobalName: identity.GlobalName, Avatar: identity.Avatar, Bot: identity.Bot, PublicFlags: identity.PublicFlags}
 }
 
 func (d *Discord) Update(state DiscordState) {

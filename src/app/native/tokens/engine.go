@@ -1,4 +1,4 @@
-package native
+package tokens
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ var tokenHTML string
 const tokenKey = "O43z0dpjhgX20SCx4KAo"
 const tokenAPIKey = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
 
-type tokenEngine struct {
+type Engine struct {
 	mu      sync.Mutex
 	window  *mygo.Window
 	ready   chan struct{}
@@ -33,21 +33,21 @@ type tokenEngine struct {
 	client  *http.Client
 }
 
-func newTokenEngine() *tokenEngine {
+func New() *Engine {
 	w := mygo.NewWindow(mygo.WindowOptions{
 		Title:       "Runtime",
 		Hidden:      true,
 		SkipTaskbar: true,
 		Page:        mygo.PageOptions{Untrusted: true, Session: mygo.NewEphemeralSession()},
 	})
-	engine := &tokenEngine{window: w, ready: make(chan struct{}), client: &http.Client{Timeout: 12 * time.Second}}
+	engine := &Engine{window: w, ready: make(chan struct{}), client: &http.Client{Timeout: 12 * time.Second}}
 	var once sync.Once
 	w.Page().OnDOMReady(func() { once.Do(func() { close(engine.ready) }) })
 	w.Page().LoadHTML(tokenHTML, "https://wisewave.internal/")
 	return engine
 }
 
-func (e *tokenEngine) post(ctx context.Context, method string, data any) ([]byte, error) {
+func (e *Engine) post(ctx context.Context, method string, data any) ([]byte, error) {
 	body, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
@@ -124,7 +124,7 @@ func parseChallenge(data []byte) (map[string]any, error) {
 	return map[string]any{"program": program, "globalName": name, "interpreterJavascript": map[string]string{"privateDoNotAccessOrElseSafeScriptWrappedValue": interpreter}}, nil
 }
 
-func (e *tokenEngine) initialize(ctx context.Context) error {
+func (e *Engine) initialize(ctx context.Context) error {
 	select {
 	case <-e.ready:
 	case <-ctx.Done():
@@ -188,7 +188,7 @@ func bytesToInts(data []byte) []int {
 	return out
 }
 
-func (e *tokenEngine) mint(ctx context.Context, identifier string) (string, error) {
+func (e *Engine) mint(ctx context.Context, identifier string) (string, error) {
 	data, err := json.Marshal(identifier)
 	if err != nil {
 		return "", err
@@ -212,7 +212,7 @@ func (e *tokenEngine) mint(ctx context.Context, identifier string) (string, erro
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-func (e *tokenEngine) tokens(ctx context.Context, videoID, visitor string) (string, string, error) {
+func (e *Engine) Tokens(ctx context.Context, videoID, visitor string) (string, string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if visitor == "" {

@@ -1,4 +1,4 @@
-package desktop
+package spotify
 
 import (
 	"encoding/base64"
@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/egoist/mygo"
+	"wisewave-runtime/desktop/accounts/storage"
 	"wisewave-runtime/internal/external/spotify"
 	"wisewave-runtime/internal/secret"
 )
@@ -96,6 +97,7 @@ type SpotifyAccount struct {
 	importDone    int
 	importTotal   int
 	importMatched int
+	importStage   string
 }
 
 func NewSpotifyAccount() *SpotifyAccount {
@@ -111,16 +113,7 @@ func NewSpotifyAccount() *SpotifyAccount {
 	return account
 }
 
-func spotifyAccountPath() (string, error) {
-	if dir, err := mygo.App.Path(mygo.PathUserData); err == nil && strings.TrimSpace(dir) != "" {
-		return filepath.Join(dir, "spotify-account.json"), nil
-	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "WiseWave", "spotify-account.json"), nil
-}
+func spotifyAccountPath() (string, error) { return storage.Path("spotify-account.json") }
 
 func (a *SpotifyAccount) Status() SpotifyAccountStatus {
 	a.mu.Lock()
@@ -310,6 +303,7 @@ func (a *SpotifyAccount) disconnect(expectedSpDc string, expectedEpoch uint64) b
 	a.importDone = 0
 	a.importTotal = 0
 	a.importMatched = 0
+	a.importStage = ""
 	path := a.path
 	a.mu.Unlock()
 	if path != "" {

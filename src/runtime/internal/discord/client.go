@@ -33,10 +33,8 @@ const (
 
 var nextNonce atomic.Uint64
 
-// ApplicationID is a Discord application ID accepted by the RPC handshake.
 type ApplicationID string
 
-// ParseApplicationID validates the decimal snowflake stored in Settings.
 func ParseApplicationID(raw string) (ApplicationID, error) {
 	if raw == "" {
 		return "", errors.New("discord application ID is empty")
@@ -53,10 +51,8 @@ func ParseApplicationID(raw string) (ApplicationID, error) {
 	return ApplicationID(raw), nil
 }
 
-// State describes the track Discord should show. A state without Playing
-// clears the activity; paused playback is intentionally not shared. A zero
-// Duration means the length is unknown, so Discord shows only elapsed time.
 type State struct {
+	Connect     bool
 	VideoID     string
 	Title       string
 	Artist      string
@@ -69,19 +65,39 @@ type State struct {
 	Playing     bool
 }
 
-// Session keeps Discord's activity in step with the latest playback state.
-// Updates are coalesced so slow IPC never blocks the app's main thread.
+type Identity struct {
+	ID          string
+	Username    string
+	GlobalName  string
+	Avatar      string
+	Bot         bool
+	PublicFlags int
+}
+
 type Session struct {
 	updates       chan State
 	stop          chan struct{}
 	done          chan struct{}
 	stopOnce      sync.Once
 	retryInterval time.Duration
+	identityMu    sync.RWMutex
+	identity      Identity
+}
+
+func (s *Session) Identity() Identity {
+	s.identityMu.RLock()
+	defer s.identityMu.RUnlock()
+	return s.identity
+}
+
+func (s *Session) setIdentity(identity Identity) {
+	s.identityMu.Lock()
+	s.identity = identity
+	s.identityMu.Unlock()
 }
 
 type dialFunc func(context.Context) (net.Conn, error)
 
-// New opens a background session for a valid Discord application ID.
 func New(id ApplicationID) *Session {
 	return newSession(id, dialDiscord)
 }
@@ -90,8 +106,6 @@ func newSession(id ApplicationID, dial dialFunc) *Session {
 	return newSessionWithRetryInterval(id, dial, retryInterval)
 }
 
-// newSessionWithRetryInterval lets tests exercise reconnects without waiting
-// for the production retry interval.
 func newSessionWithRetryInterval(id ApplicationID, dial dialFunc, interval time.Duration) *Session {
 	if interval <= 0 {
 		interval = retryInterval
@@ -104,7 +118,6 @@ func newSessionWithRetryInterval(id ApplicationID, dial dialFunc, interval time.
 	return s
 }
 
-// Update replaces any pending state with the latest snapshot.
 func (s *Session) Update(state State) {
 	select {
 	case <-s.stop:
@@ -125,7 +138,6 @@ func (s *Session) Update(state State) {
 	}
 }
 
-// Close clears the current activity and waits for the IPC worker to stop.
 func (s *Session) Close() {
 	s.stopOnce.Do(func() { close(s.stop) })
 	<-s.done
@@ -162,11 +174,13 @@ func (s *Session) run(id ApplicationID, dial dialFunc) {
 		}
 		conn, reader, incoming = nil, nil, nil
 		sent = false
+		s.setIdentity(Identity{})
 	}
 
 	update := func(state State) {
 		latest = state
-		if !state.Playing || state.VideoID == "" {
+		needsConnection := state.Connect || (state.Playing && state.VideoID != "")
+		if !needsConnection {
 			if sent && conn != nil && reader != nil {
 				if err := setActivity(conn, reader, nil); err != nil {
 					log.Printf("clear Discord Rich Presence: %v", err)
@@ -179,18 +193,22 @@ func (s *Session) run(id ApplicationID, dial dialFunc) {
 		}
 		if conn == nil && !time.Now().Before(retryAt) {
 			ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
-			connected, err := connect(ctx, id, dial)
+			connected, identity, err := connect(ctx, id, dial)
 			cancel()
 			if err != nil {
 				retryAt = time.Now().Add(s.retryInterval)
 				return
 			}
 			conn = connected
+			s.setIdentity(identity)
 			reader = startRPCReader(conn)
 			incoming = reader.events
 			sent = false
 		}
 		if conn == nil {
+			return
+		}
+		if !state.Playing || state.VideoID == "" {
 			return
 		}
 
@@ -251,8 +269,6 @@ type activityKey struct {
 	SeekVersion uint64
 }
 
-// keyFor compares the length in the whole seconds Discord receives, so a more
-// precise length for the same track does not resend the activity.
 func keyFor(state State) activityKey {
 	return activityKey{
 		VideoID: state.VideoID, Title: state.Title, Artist: state.Artist,
@@ -327,45 +343,62 @@ func truncate(text string, limit int) string {
 	return string([]rune(text)[:limit])
 }
 
-func connect(ctx context.Context, id ApplicationID, dial dialFunc) (net.Conn, error) {
+func connect(ctx context.Context, id ApplicationID, dial dialFunc) (net.Conn, Identity, error) {
 	conn, err := dial(ctx)
 	if err != nil {
-		return nil, err
+		return nil, Identity{}, err
 	}
 	if err := writeFrame(conn, nil, handshakeCode, map[string]any{"v": rpcVersion, "client_id": string(id)}); err != nil {
 		_ = conn.Close()
-		return nil, err
+		return nil, Identity{}, err
 	}
 	for {
 		opcode, body, err := readPacket(conn, rpcTimeout)
 		if err != nil {
 			_ = conn.Close()
-			return nil, err
+			return nil, Identity{}, err
 		}
 		if opcode == pingOpcode {
 			if err := writePacket(conn, nil, pongOpcode, body); err != nil {
 				_ = conn.Close()
-				return nil, err
+				return nil, Identity{}, err
 			}
 			continue
 		}
 		if opcode != frameOpcode {
 			_ = conn.Close()
-			return nil, fmt.Errorf("unexpected Discord handshake response opcode %d", opcode)
+			return nil, Identity{}, fmt.Errorf("unexpected Discord handshake response opcode %d", opcode)
 		}
 		var message rpcMessage
 		if err := json.Unmarshal(body, &message); err != nil {
 			_ = conn.Close()
-			return nil, err
+			return nil, Identity{}, err
 		}
 		if message.Event == "ERROR" {
 			_ = conn.Close()
-			return nil, fmt.Errorf("discord RPC handshake error: %s", message.Data)
+			return nil, Identity{}, fmt.Errorf("discord RPC handshake error: %s", message.Data)
 		}
 		if message.Event == "READY" {
-			return conn, nil
+			return conn, identityFromReady(message.Data), nil
 		}
 	}
+}
+
+func identityFromReady(data json.RawMessage) Identity {
+	var ready struct {
+		User struct {
+			ID          string `json:"id"`
+			Username    string `json:"username"`
+			GlobalName  string `json:"global_name"`
+			Avatar      string `json:"avatar"`
+			Bot         bool   `json:"bot"`
+			PublicFlags int    `json:"public_flags"`
+		} `json:"user"`
+	}
+	if json.Unmarshal(data, &ready) != nil {
+		return Identity{}
+	}
+	return Identity{ID: ready.User.ID, Username: ready.User.Username, GlobalName: ready.User.GlobalName, Avatar: ready.User.Avatar, Bot: ready.User.Bot, PublicFlags: ready.User.PublicFlags}
 }
 
 type rpcMessage struct {

@@ -1,4 +1,4 @@
-package native
+package windows
 
 import (
 	"github.com/egoist/mygo"

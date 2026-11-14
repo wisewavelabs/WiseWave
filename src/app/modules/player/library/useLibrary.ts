@@ -180,11 +180,11 @@ export function useLibrary() {
       return changed ? { liked, playlists } : current;
     });
   };
-  const importSpotify = (payload: { liked: boolean; sourceId: string; title: string; cover?: string; tracks: Track[] }) => {
+  const importCollection = (payload: { provider?: "spotify" | "youtube"; liked: boolean; sourceId: string; title: string; cover?: string; tracks: Track[] }) => {
     const incoming = (Array.isArray(payload.tracks) ? payload.tracks : [])
       .filter((track) => track?.id)
       .map((track) => withLibraryMeta(track));
-    update((current) => {
+    const next = ((current: Data) => {
       if (payload.liked) {
         const seen = new Set(current.liked.map((track) => track.id));
         const updates = new Map(incoming.map((track) => [track.id, track]));
@@ -199,12 +199,13 @@ export function useLibrary() {
         });
         return { ...current, liked: [...added, ...existing] };
       }
-      const id = `spotify:${payload.sourceId}`;
+      const provider = payload.provider || "spotify";
+      const id = `${provider}:${payload.sourceId}`;
       const existing = current.playlists.find((playlist) => playlist.id === id);
       const playlist: Playlist = {
         id,
         name: payload.title || existing?.name || "Imported playlist",
-        description: existing?.description || "Imported from Spotify",
+        description: existing?.description || `Imported from ${provider === "youtube" ? "YouTube Music" : "Spotify"}`,
         cover: payload.cover || existing?.cover,
         tracks: incoming,
       };
@@ -214,8 +215,15 @@ export function useLibrary() {
           ? current.playlists.map((item) => (item.id === id ? playlist : item))
           : [playlist, ...current.playlists],
       };
-    });
+    })(read());
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+      setData(next); setError("");
+    } catch {
+      setError("Library changes could not be saved.");
+      throw new Error("Library changes could not be saved.");
+    }
     return incoming.length;
   };
-  return { ...data, error, clearError: () => setError(""), toggleLike, create, add, remove, edit, removePlaylist, ensureDuration, importSpotify };
+  return { ...data, error, clearError: () => setError(""), toggleLike, create, add, remove, edit, removePlaylist, ensureDuration, importCollection };
 }

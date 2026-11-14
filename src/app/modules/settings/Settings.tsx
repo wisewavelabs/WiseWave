@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
-import { TrayControl, SpotifyAccount, SpotifyLogin, events, type SpotifyImportResult, type SpotifySyncStatus, type Track } from "../../mygo";
+import { Discord, TrayControl, type DiscordProfile, type SpotifyImportResult, type YouTubeImportResult, type Track } from "../../mygo";
 import { artworkURL } from "../../shared/ui/Artwork";
 import { Classic } from "../../shared/ui/Classic";
 import { MarqueeText } from "../../shared/ui/MarqueeText";
 import { PlayerAlert } from "../player/shared/PlayerAlert";
 import { AudioLines, BookOpen, Check, ChevronLeft, ChevronRight, CircleHelp, ExternalLink, Code2, Globe, Mic2, Palette, Shield, X } from "lucide-react";
 import appIcon from "../../../../resources/images/icon.png";
-import spotifyLikedSongsArt from "../../../../resources/images/liked-songs.png";
 import echoControlsLicense from "../../../../resources/licenses/echo-controls-license.txt?raw";
 import lyricsLicense from "../../../../resources/licenses/accompanist-lyrics-license.txt?raw";
 import lyricsNotice from "../../../../resources/licenses/accompanist-lyrics-notice.txt?raw";
@@ -26,11 +25,19 @@ import { ProgressStylePreview } from "../player/playback/ProgressStylePreview";
 import { PROGRESS_STYLES, readProgressStyle, type ProgressStyle } from "../player/playback/progressStyle";
 import { readZoom, setZoom, ZOOM_LEVELS } from "../../shared/zoom";
 import { Equalizer } from "./Equalizer";
+import { YouTubeConnection, YouTubeIcon } from "../accounts/YouTube/YouTubeConnection";
+import { SpotifyConnection, SpotifyIcon } from "../accounts/Spotify/SpotifyConnection";
 import { linkLabel, links } from "../../shared/links";
 
 function formatTime(value: number) {
   const seconds = Math.max(0, Math.floor(value));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function discordBadges(flags: number) {
+  return [
+    [1, "Discord Staff"], [2, "Partnered Server Owner"], [4, "HypeSquad Events"], [8, "Bug Hunter"], [64, "House Bravery"], [128, "House Brilliance"], [256, "House Balance"], [512, "Early Supporter"], [16384, "Bug Hunter Level 2"], [65536, "Verified Bot"], [131072, "Early Verified Bot Developer"], [262144, "Certified Moderator"], [4194304, "Active Developer"],
+  ].filter(([flag]) => (flags & Number(flag)) !== 0).map(([, label]) => String(label));
 }
 
 function ZoomControl() {
@@ -70,6 +77,7 @@ export interface SettingsProps {
   position?: number;
   duration?: number;
   onImportSpotify?: (result: SpotifyImportResult) => number;
+  onImportYouTube?: (result: YouTubeImportResult) => number;
 }
 
 const DEFAULT_SETTINGS = {
@@ -134,7 +142,7 @@ interface SettingGroupDef {
 
 interface SettingSectionDef {
   t: string;
-  pre?: "discord" | "spotify";
+  pre?: "discord" | "spotify" | "youtube";
   g: SettingGroupDef[];
 }
 
@@ -264,6 +272,7 @@ const SETTINGS_SECTIONS: Record<string, SettingSectionDef> = {
       },
     ],
   },
+  youtube: { t: "YouTube Music", pre: "youtube", g: [] },
   spotify: {
     t: "Spotify",
     pre: "spotify",
@@ -307,7 +316,7 @@ const LICENSES = [
 
 const NAV_GROUPS = [
   ["Music", ["appearance", "playback", "lyrics", "library"]],
-  ["Connect", ["spotify", "discord"]],
+  ["Connect", ["youtube", "spotify", "discord"]],
   ["System", ["privacy", "about"]],
 ] as const;
 
@@ -319,15 +328,8 @@ function DiscordIcon({ size = 18 }: { size?: number }) {
   );
 }
 
-function SpotifyIcon({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
-    </svg>
-  );
-}
 
-const NAV_ICONS = { appearance: Palette, playback: AudioLines, lyrics: Mic2, library: BookOpen, spotify: SpotifyIcon, discord: DiscordIcon, privacy: Shield, about: CircleHelp };
+const NAV_ICONS = { appearance: Palette, playback: AudioLines, lyrics: Mic2, library: BookOpen, spotify: SpotifyIcon, youtube: YouTubeIcon, discord: DiscordIcon, privacy: Shield, about: CircleHelp };
 
 export function Settings({
   onClose,
@@ -343,6 +345,7 @@ export function Settings({
   position = 0,
   duration = 0,
   onImportSpotify,
+  onImportYouTube,
 }: SettingsProps) {
   const currentPosition = position;
   const currentDuration = duration;
@@ -371,6 +374,7 @@ export function Settings({
   });
 
   const [activeSection, setActiveSection] = useState<string>("appearance");
+  const [discordProfile, setDiscordProfile] = useState<DiscordProfile | null>(null);
   const [showLicenses, setShowLicenses] = useState(false);
   const [showLyricsSources, setShowLyricsSources] = useState(false);
   const [query, setQuery] = useState("");
@@ -381,18 +385,6 @@ export function Settings({
   const [note, setNote] = useState<string>("");
   const [confirmHistory, setConfirmHistory] = useState(false);
   const [exportingHistory, setExportingHistory] = useState(false);
-  const [spotifyLinked, setSpotifyLinked] = useState(false);
-  const [spotifyName, setSpotifyName] = useState("");
-  const [spotifyAvatar, setSpotifyAvatar] = useState("");
-  const [spotifyBusy, setSpotifyBusy] = useState(false);
-  const [spotifyCancelling, setSpotifyCancelling] = useState(false);
-  const [spotifySync, setSpotifySync] = useState<SpotifySyncStatus | null>(null);
-  const [spotifyModalOpen, setSpotifyModalOpen] = useState(false);
-  const [spotifyModalClosing, setSpotifyModalClosing] = useState(false);
-  const [spotifyImportingId, setSpotifyImportingId] = useState<string | null>(null);
-  const spotifyModalTimer = useRef<number | null>(null);
-  const spotifyModalOpenRef = useRef(false);
-  const spotifyWasLinkedRef = useRef<boolean | null>(null);
   const dismissNote = useCallback(() => setNote(""), []);
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef<number | null>(null);
@@ -427,6 +419,22 @@ export function Settings({
       setSt((prev) => ({ ...prev, dc: discordEnabled }));
     }
   }, [discordEnabled]);
+
+  useEffect(() => {
+    if (activeSection !== "discord" || !st.dc) {
+      setDiscordProfile(null);
+      return;
+    }
+    let alive = true;
+    const refresh = () => {
+      void Discord.profile().then((profile) => {
+        if (alive) setDiscordProfile(profile.id && profile.username ? profile : null);
+      }).catch(() => { if (alive) setDiscordProfile(null); });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [activeSection, st.dc]);
 
   const saveSetting = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
     setSt((prev) => {
@@ -471,118 +479,6 @@ export function Settings({
   useEffect(() => {
     void TrayControl.startupMode().then((mode) => setSt((previous) => ({ ...previous, startup: mode }))).catch(() => setNote("Could not check launch at startup."));
   }, []);
-
-  useEffect(() => {
-    spotifyModalOpenRef.current = spotifyModalOpen;
-  }, [spotifyModalOpen]);
-
-  useEffect(() => {
-    const syncSpotify = () => {
-      void SpotifyAccount.status().then((status) => {
-        const linked = Boolean(status?.linked);
-        setSpotifyLinked(linked);
-        setSpotifyName(status?.display_name || "");
-        setSpotifyAvatar(status?.image_url || "");
-        if (spotifyWasLinkedRef.current === null) spotifyWasLinkedRef.current = linked;
-      }).catch(() => {});
-      void SpotifyAccount.syncStatus().then((status) => {
-        setSpotifySync(status);
-      }).catch(() => {});
-      void SpotifyLogin.busy().then(setSpotifyBusy).catch(() => setSpotifyBusy(false));
-    };
-    syncSpotify();
-    const offAccount = events.spotifyAccountChanged.on((linked) => {
-      syncSpotify();
-      const wasLinked = spotifyWasLinkedRef.current;
-      if (!linked) {
-        setSpotifyModalOpen(false);
-        setSpotifySync(null);
-        setSpotifyImportingId(null);
-        if (wasLinked === true && !spotifyModalOpenRef.current) {
-          setNote("Spotify disconnected.");
-        }
-        spotifyWasLinkedRef.current = false;
-        setSpotifyBusy(false);
-      }
-    });
-    const offSync = events.spotifyLibrarySyncChanged.on((status) => {
-      setSpotifySync(status);
-      if (status?.display_name) setSpotifyName(status.display_name);
-      if (status?.image_url) setSpotifyAvatar(status.image_url);
-      if (status?.phase === "ready") {
-        const wasLinked = spotifyWasLinkedRef.current;
-        setSpotifyLinked(true);
-        setSpotifyName(status.library?.display_name || status.display_name || "");
-        setSpotifyAvatar(status.library?.image_url || status.image_url || "");
-        setSpotifyBusy(false);
-        if (wasLinked === false && !spotifyModalOpenRef.current) {
-          setNote("Spotify linked.");
-        }
-        spotifyWasLinkedRef.current = true;
-      }
-      if (status?.phase === "error") {
-        setSpotifyBusy(false);
-      }
-    });
-    const timer = window.setInterval(() => {
-      void SpotifyLogin.busy().then(setSpotifyBusy).catch(() => {});
-    }, 1000);
-    return () => {
-      offAccount();
-      offSync();
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  const closeSpotifyModal = useCallback(() => {
-    if (spotifySync?.phase === "syncing" || spotifyImportingId) return;
-    setSpotifyModalClosing(true);
-    if (spotifyModalTimer.current) window.clearTimeout(spotifyModalTimer.current);
-    spotifyModalTimer.current = window.setTimeout(() => {
-      setSpotifyModalOpen(false);
-      setSpotifyModalClosing(false);
-      spotifyModalTimer.current = null;
-    }, 150);
-  }, [spotifySync?.phase, spotifyImportingId]);
-
-  const startSpotifyImport = useCallback((sourceId: string) => {
-    if (spotifyImportingId) return;
-    setSpotifyImportingId(sourceId);
-    void SpotifyAccount.import(sourceId).then((result) => {
-      onImportSpotify?.(result);
-      setSpotifyImportingId(null);
-      setSpotifyModalClosing(true);
-      if (spotifyModalTimer.current) window.clearTimeout(spotifyModalTimer.current);
-      spotifyModalTimer.current = window.setTimeout(() => {
-        setSpotifyModalOpen(false);
-        setSpotifyModalClosing(false);
-        spotifyModalTimer.current = null;
-      }, 150);
-      const matched = Number(result?.matched) || 0;
-      const total = Number(result?.total) || 0;
-      if (total > 0) setNote(`Imported ${matched} of ${total} tracks.`);
-      else setNote("No matching tracks found.");
-    }).catch((error) => {
-      setSpotifyImportingId(null);
-      setNote(error instanceof Error && error.message ? error.message : "Spotify import failed.");
-    });
-  }, [closeSpotifyModal, onImportSpotify, spotifyImportingId]);
-
-  const logoutSpotify = useCallback(() => {
-    if (spotifyBusy || spotifySync?.phase === "syncing" || spotifyImportingId) return;
-    setSpotifyBusy(true);
-    void SpotifyLogin.logout().then(() => {
-      setSpotifyLinked(false);
-      setSpotifyName("");
-      setSpotifyAvatar("");
-      setSpotifySync(null);
-      setSpotifyImportingId(null);
-      setSpotifyModalOpen(false);
-      setNote("Spotify logged out.");
-    }).catch((error: unknown) => {
-      setNote(error instanceof Error && error.message ? error.message : "Could not log out of Spotify.");
-    }).finally(() => setSpotifyBusy(false));
-  }, [spotifyBusy, spotifyImportingId, spotifySync?.phase]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -635,7 +531,6 @@ export function Settings({
   useEffect(() => () => {
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
     if (progressPickerTimer.current !== null) window.clearTimeout(progressPickerTimer.current);
-    if (spotifyModalTimer.current !== null) window.clearTimeout(spotifyModalTimer.current);
   }, []);
 
   useEffect(() => {
@@ -915,6 +810,7 @@ export function Settings({
   const progressPercent = track && currentDuration > 0
     ? Math.min(100, Math.max(0, (currentPosition / currentDuration) * 100))
     : 0;
+  const profileBadges = discordProfile ? discordBadges(discordProfile.public_flags) : [];
 
   return (
     <div className={`settings-overlay ${closing ? "settings-closing" : ""}`}>
@@ -1007,124 +903,18 @@ export function Settings({
               <button type="button" onClick={() => { setShowLicenses(true); if (mainRef.current) mainRef.current.scrollTop = 0; }}><BookOpen size={21} /><span><strong>Open source licenses</strong><small>Licenses and notices for included components</small></span><ChevronRight size={19} /></button>
             </div>)}
 
-            {currentSection.pre === "spotify" && (
-              <div className="settings-spotify">
-                {spotifyLinked ? (
-                  <div className="settings-spotify-card is-linked">
-                    <div className="settings-spotify-identity">
-                      <div className="settings-spotify-avatar-wrap">
-                        {spotifyAvatar ? (
-                          <img className="settings-spotify-avatar" src={spotifyAvatar} alt="" width={72} height={72} />
-                        ) : (
-                          <span className="settings-spotify-avatar is-fallback" aria-hidden="true">{(spotifyName || "S").slice(0, 1)}</span>
-                        )}
-                      </div>
-                      <div className="settings-spotify-copy">
-                        <strong>{spotifyName || "Connected"}</strong>
-                        <small className="settings-spotify-status">
-                          {spotifyImportingId ? (
-                            "Importing…"
-                          ) : spotifySync?.phase === "syncing" || spotifyBusy ? (
-                            "Syncing your library…"
-                          ) : (
-                            <>
-                              <span className="settings-nav-icon is-spotify" aria-hidden="true"><SpotifyIcon size={15} /></span>
-                              Connected
-                            </>
-                          )}
-                        </small>
-                      </div>
-                    </div>
+            {currentSection.pre === "youtube" && <YouTubeConnection onImport={onImportYouTube} />}
 
-                    <div className="settings-spotify-stats" aria-label="Library totals">
-                      <div>
-                        <b>{spotifySync?.library?.liked_songs ?? spotifySync?.liked_songs ?? "—"}</b>
-                        <span>Liked songs</span>
-                      </div>
-                      <div>
-                        <b>{spotifySync?.library?.playlist_count ?? spotifySync?.playlist_total ?? "—"}</b>
-                        <span>Playlists</span>
-                      </div>
-                    </div>
-
-                    <div className="settings-action-buttons">
-                      <button
-                        type="button"
-                        className="settings-btn"
-                        onClick={() => {
-                          if (spotifyModalTimer.current !== null) {
-                            window.clearTimeout(spotifyModalTimer.current);
-                            spotifyModalTimer.current = null;
-                          }
-                          setSpotifyModalOpen(true);
-                          setSpotifyModalClosing(false);
-                          if (!spotifySync?.library && spotifySync?.phase !== "syncing") {
-                            void SpotifyAccount.syncLibrary().catch(() => {});
-                          }
-                        }}
-                      >
-                        View library
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-btn"
-                        disabled={spotifyBusy || spotifySync?.phase === "syncing" || Boolean(spotifyImportingId)}
-                        onClick={logoutSpotify}
-                      >
-                        Log out
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="settings-spotify-card">
-                    <div className="settings-spotify-mark settings-nav-icon is-spotify" aria-hidden="true">
-                      <SpotifyIcon size={40} />
-                    </div>
-                    <div className="settings-spotify-copy">
-                      <strong>{spotifyBusy ? "waiting for you…" : "Not linked"}</strong>
-                      <small>{spotifyBusy ? "finish signing in over in the Spotify window." : "Feel free to connect Spotify whenever you want to sync your library."}</small>
-                    </div>
-                    <div className="settings-action-buttons">
-                      <button
-                        type="button"
-                        className="settings-btn"
-                        disabled={spotifyBusy || spotifyCancelling}
-                        onClick={() => {
-                          setSpotifyBusy(true);
-                          void SpotifyLogin.start().catch((error: unknown) => {
-                            setSpotifyBusy(false);
-                            setNote(error instanceof Error && error.message ? error.message : "Could not start Spotify sign-in.");
-                          });
-                        }}
-                      >
-                        {spotifyBusy ? "waiting…" : "Link Spotify"}
-                      </button>
-                      {spotifyBusy || spotifyCancelling ? (
-                        <button
-                          type="button"
-                          className="settings-btn"
-                          disabled={spotifyCancelling}
-                          aria-busy={spotifyCancelling}
-                          onClick={() => {
-                            setSpotifyCancelling(true);
-                            void SpotifyLogin.cancel().then(() => setSpotifyBusy(false)).catch((error: unknown) => {
-                              setNote(error instanceof Error && error.message ? error.message : "Could not cancel Spotify sign-in.");
-                            }).finally(() => setSpotifyCancelling(false));
-                          }}
-                        >
-                          {spotifyCancelling ? <Classic className="spotify-sync-import-loader" /> : "Cancel"}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {currentSection.pre === "spotify" && <SpotifyConnection onImportSpotify={onImportSpotify} />}
 
             {currentSection.pre === "discord" && (
               <div className="settings-pv settings-dcp">
-                <div className="discord-preview-heading">Preview</div>
-                <div className="discord-shell">
+                <div className={`discord-account-heading${discordProfile ? " is-connected" : " is-disconnected"}`}><DiscordIcon size={16} /><span>{discordProfile ? "Connected" : "Disconnected"}</span></div>
+                {discordProfile ? <div className="discord-profile-card">
+                  <div className="discord-profile-identity">
+                    {discordProfile.avatar ? <img className="discord-account-avatar" src={`https://cdn.discordapp.com/avatars/${encodeURIComponent(discordProfile.id)}/${encodeURIComponent(discordProfile.avatar)}.png?size=128`} alt="" referrerPolicy="no-referrer" /> : <span className="discord-account-avatar discord-account-avatar-fallback"><DiscordIcon size={28} /></span>}
+                    <div className="discord-account-copy"><MarqueeText className="discord-profile-display-name">{discordProfile.global_name || discordProfile.username}</MarqueeText><MarqueeText className="discord-profile-username">@{discordProfile.username}</MarqueeText></div>
+                  </div>
                   <div className={`discord-activity ${!st.dc ? "dim" : ""}`}>
                     <div className="discord-label">Listening to WiseWave</div>
                     <div className="discord-body">
@@ -1165,7 +955,7 @@ export function Settings({
                       </div>
                     </div>
                   </div>
-                </div>
+                </div> : <div className="discord-account-empty">{!st.dc ? "Discord activity is turned off in Presence settings." : "Open the Discord desktop app to show your profile here."}</div>}
               </div>
             )}
 
@@ -1225,130 +1015,6 @@ export function Settings({
                 );
               })}
             </div>
-          </div>
-        </div>
-      )}
-      {spotifyModalOpen && (
-        <div
-          className={`spotify-sync-overlay${spotifyModalClosing ? " closing" : ""}`}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Spotify library"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeSpotifyModal();
-          }}
-        >
-          <div className="spotify-sync-modal" aria-labelledby="spotify-sync-title">
-            {spotifySync?.phase === "syncing" || (!spotifySync?.library && spotifyBusy) ? (
-              <div className="spotify-sync-loading" role="status" aria-live="polite">
-                <button type="button" className="spotify-sync-close" aria-label="Close" disabled onClick={closeSpotifyModal}>
-                  <X size={18} />
-                </button>
-                <div className="spotify-sync-spinner" aria-hidden="true">
-                  <i /><i /><i />
-                </div>
-                <div className="spotify-sync-shimmer">Bringing your music over</div>
-                <small>
-                  {spotifySync?.playlists_loaded
-                    ? `${spotifySync.playlists_loaded}${spotifySync.playlist_total ? ` / ${spotifySync.playlist_total}` : ""} playlists`
-                    : spotifySync?.liked_songs
-                      ? `${spotifySync.liked_songs} liked songs found`
-                      : "Reading profile and playlists"}
-                </small>
-              </div>
-            ) : spotifySync?.phase === "error" ? (
-              <div className="spotify-sync-error">
-                <button type="button" className="spotify-sync-close" aria-label="Close" onClick={closeSpotifyModal}>
-                  <X size={18} />
-                </button>
-                <p>{spotifySync.error || "Could not sync your Spotify library."}</p>
-                <button
-                  type="button"
-                  className="settings-btn"
-                  onClick={() => {
-                    void SpotifyAccount.syncLibrary().catch(() => {});
-                  }}
-                >
-                  Try again
-                </button>
-              </div>
-            ) : spotifySync?.library ? (
-              <div className="spotify-sync-body">
-                <div className="spotify-sync-profile">
-                  {spotifySync.library.image_url ? (
-                    <img src={spotifySync.library.image_url} alt="" width={68} height={68} />
-                  ) : (
-                    <span className="spotify-sync-avatar-fallback" aria-hidden="true"><SpotifyIcon size={22} /></span>
-                  )}
-                  <div>
-                    <strong id="spotify-sync-title">{spotifySync.library.display_name || spotifyName || "Spotify user"}</strong>
-                    {[spotifySync.library.product, spotifySync.library.country].filter(Boolean).length ? (
-                      <small>
-                        {[spotifySync.library.product, spotifySync.library.country].filter(Boolean).join(" - ")}
-                      </small>
-                    ) : null}
-                    {spotifySync.library.email ? <small>{spotifySync.library.email}</small> : null}
-                  </div>
-                  <button type="button" className="spotify-sync-close" aria-label="Close" onClick={closeSpotifyModal}>
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div className="spotify-sync-stats">
-                  <div><b>{spotifySync.library.liked_songs}</b><span>Liked songs</span></div>
-                  <div><b>{spotifySync.library.playlist_count}</b><span>Playlists</span></div>
-                </div>
-
-                <div className="spotify-sync-list player-scroll" aria-label="Spotify playlists">
-                  <div className="spotify-sync-row is-liked">
-                    <img className="spotify-sync-cover" src={spotifyLikedSongsArt} alt="" width={48} height={48} />
-                    <div className="spotify-sync-row-copy">
-                      <MarqueeText className="spotify-sync-row-title">Liked Songs</MarqueeText>
-                      <MarqueeText className="spotify-sync-row-meta">{`${spotifySync.library.liked_songs} tracks`}</MarqueeText>
-                    </div>
-                    <button
-                      type="button"
-                      className="spotify-sync-import"
-                      disabled={Boolean(spotifyImportingId)}
-                      aria-busy={spotifyImportingId === "liked"}
-                      onClick={() => startSpotifyImport("liked")}
-                    >
-                      {spotifyImportingId === "liked" ? <Classic className="spotify-sync-import-loader" /> : "Import"}
-                    </button>
-                  </div>
-                  {(spotifySync.library.playlists || []).map((playlist) => {
-                    const meta = `${playlist.track_count} tracks${playlist.owner ? ` by ${playlist.owner}` : ""}`;
-                    return (
-                    <div className="spotify-sync-row" key={playlist.id}>
-                      {playlist.image_url ? (
-                        <img className="spotify-sync-cover" src={playlist.image_url} alt="" width={48} height={48} />
-                      ) : (
-                        <span className="spotify-sync-cover empty" aria-hidden="true" />
-                      )}
-                      <div className="spotify-sync-row-copy">
-                        <MarqueeText className="spotify-sync-row-title">{playlist.name}</MarqueeText>
-                        <MarqueeText className="spotify-sync-row-meta">{meta}</MarqueeText>
-                      </div>
-                      <button
-                        type="button"
-                        className="spotify-sync-import"
-                        disabled={Boolean(spotifyImportingId)}
-                        aria-busy={spotifyImportingId === playlist.id}
-                        onClick={() => startSpotifyImport(playlist.id)}
-                      >
-                        {spotifyImportingId === playlist.id ? <Classic className="spotify-sync-import-loader" /> : "Import"}
-                      </button>
-                    </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="spotify-sync-loading" role="status">
-                <div className="spotify-sync-spinner" aria-hidden="true"><i /><i /><i /></div>
-                <div className="spotify-sync-shimmer">Bringing your music over</div>
-              </div>
-            )}
           </div>
         </div>
       )}

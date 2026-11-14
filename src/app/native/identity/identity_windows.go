@@ -1,6 +1,6 @@
 //go:build windows
 
-package native
+package identity
 
 import (
 	"os"
@@ -35,6 +35,10 @@ type propertyKey struct {
 	ID     uint32
 }
 
+type comObject struct {
+	vtable *uintptr
+}
+
 type propVariant struct {
 	VT  uint16
 	_   uint16
@@ -44,10 +48,10 @@ type propVariant struct {
 }
 
 var (
-	clsidShellLink    = guid{0x00021401, 0x0000, 0x0000, [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
-	iidIShellLinkW    = guid{0x000214F9, 0x0000, 0x0000, [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
-	iidIPersistFile   = guid{0x0000010B, 0x0000, 0x0000, [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
-	iidIPropertyStore = guid{0x886D8EEB, 0x8CF2, 0x4446, [8]byte{0x8D, 0x02, 0xCD, 0xBA, 0x1D, 0xBD, 0xCF, 0x99}}
+	clsidShellLink     = guid{0x00021401, 0x0000, 0x0000, [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
+	iidIShellLinkW     = guid{0x000214F9, 0x0000, 0x0000, [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
+	iidIPersistFile    = guid{0x0000010B, 0x0000, 0x0000, [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
+	iidIPropertyStore  = guid{0x886D8EEB, 0x8CF2, 0x4446, [8]byte{0x8D, 0x02, 0xCD, 0xBA, 0x1D, 0xBD, 0xCF, 0x99}}
 	pkeyAppUserModelID = propertyKey{
 		Format: guid{0x9F4C2855, 0x9F79, 0x4B39, [8]byte{0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}},
 		ID:     5,
@@ -68,7 +72,7 @@ const (
 	psCommit   = 7
 )
 
-func initAppIdentity() {
+func Init() {
 	exe, err := os.Executable()
 	if err != nil {
 		return
@@ -136,7 +140,7 @@ func writeStartMenuShortcut(name, exe, aumid string) error {
 		defer procCoUninitialize.Call()
 	}
 
-	var shellLink uintptr
+	var shellLink *comObject
 	hr, _, _ = procCoCreateInstance.Call(
 		uintptr(unsafe.Pointer(&clsidShellLink)),
 		0,
@@ -144,7 +148,7 @@ func writeStartMenuShortcut(name, exe, aumid string) error {
 		uintptr(unsafe.Pointer(&iidIShellLinkW)),
 		uintptr(unsafe.Pointer(&shellLink)),
 	)
-	if hr != 0 || shellLink == 0 {
+	if hr != 0 || shellLink == nil {
 		return syscall.Errno(hr)
 	}
 	defer releaseCOM(shellLink)
@@ -157,7 +161,7 @@ func writeStartMenuShortcut(name, exe, aumid string) error {
 	}
 	_ = comCall(shellLink, slSetIconLocation, uintptr(unsafe.Pointer(utf16Ptr(exe))), 0)
 
-	if store := queryInterface(shellLink, &iidIPropertyStore); store != 0 {
+	if store := queryInterface(shellLink, &iidIPropertyStore); store != nil {
 		s := utf16Slice(aumid)
 		v := propVariant{VT: vtLPWSTR, Val: uintptr(unsafe.Pointer(&s[0]))}
 		_ = comCall(store, psSetValue, uintptr(unsafe.Pointer(&pkeyAppUserModelID)), uintptr(unsafe.Pointer(&v)))
@@ -167,7 +171,7 @@ func writeStartMenuShortcut(name, exe, aumid string) error {
 	}
 
 	persist := queryInterface(shellLink, &iidIPersistFile)
-	if persist == 0 {
+	if persist == nil {
 		return syscall.EINVAL
 	}
 	defer releaseCOM(persist)
@@ -183,14 +187,13 @@ func utf16Slice(s string) []uint16 {
 	return append(utf16.Encode([]rune(s)), 0)
 }
 
-func comCall(obj uintptr, method uintptr, args ...uintptr) error {
-	if obj == 0 {
+func comCall(obj *comObject, method uintptr, args ...uintptr) error {
+	if obj == nil {
 		return syscall.EINVAL
 	}
-	vtable := *(*uintptr)(unsafe.Pointer(obj))
-	fn := *(*uintptr)(unsafe.Pointer(vtable + method*unsafe.Sizeof(uintptr(0))))
+	fn := *(*uintptr)(unsafe.Add(unsafe.Pointer(obj.vtable), method*unsafe.Sizeof(uintptr(0))))
 	params := make([]uintptr, 0, 1+len(args))
-	params = append(params, obj)
+	params = append(params, uintptr(unsafe.Pointer(obj)))
 	params = append(params, args...)
 	hr, _, _ := syscall.SyscallN(fn, params...)
 	if hr != 0 {
@@ -199,14 +202,14 @@ func comCall(obj uintptr, method uintptr, args ...uintptr) error {
 	return nil
 }
 
-func queryInterface(obj uintptr, iid *guid) uintptr {
-	var out uintptr
+func queryInterface(obj *comObject, iid *guid) *comObject {
+	var out *comObject
 	if comCall(obj, 0, uintptr(unsafe.Pointer(iid)), uintptr(unsafe.Pointer(&out))) != nil {
-		return 0
+		return nil
 	}
 	return out
 }
 
-func releaseCOM(obj uintptr) {
+func releaseCOM(obj *comObject) {
 	_ = comCall(obj, 2)
 }
